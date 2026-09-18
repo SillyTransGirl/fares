@@ -1,10 +1,17 @@
 import fs from 'node:fs';
 import https from 'node:https';
+import { execSync } from 'node:child_process';
 import { offer } from '../lib/normalize.js';
 
-// Integrated DB provider: RIS::Journeys (1.0.273 Paket XS) + Timetables (1.0.274 Free) + RIS::Stations
-// Priority: 1) RIS::Journeys for real from→to journeys (supports +14d), 2) Timetables plan as fallback for today/tomorrow
+// Integrated DB provider: web fare API via Oxylabs Web Unblocker + RIS::Journeys + Timetables fallbacks
+// Priority: 1) www.bahn.de/web/api/angebote/fahrplan via Web Unblocker (real prices, +14d),
+//           2) RIS::Journeys for safe-plan fallback, 3) Timetables plan for today/tomorrow
 const UA = 'fare-comparator@https://sillytransfem.online (personal fare monitoring)';
+
+const OXY = {
+  user: process.env.OXYLABS_USER || '',
+  pass: process.env.OXYLABS_PASS || '',
+};
 
 // Credentials come from .env / environment (DB_CLIENT_ID, DB_CLIENT_SECRET). See lib/env.js
 const CLIENT_ID = process.env.DB_CLIENT_ID || '';
@@ -23,6 +30,16 @@ const EVA_MAP = new Map([
   ['münchen hbf', '8000261'], ['muenchen hbf', '8000261'], ['münchen', '8000261'], ['muenchen', '8000261'],
   ['praha', '5400001'], ['praha hl.n.', '5400001'], ['prague', '5400001'],
   ['hamburg hbf', '8002549'], ['köln hbf', '8000207'], ['frankfurt hbf', '8000105'],
+  ['stuttgart hbf', '8000096'], ['dresden hbf', '8010085'], ['leipzig hbf', '8010205'],
+  ['nürnberg hbf', '8000284'], ['frankfurt(m) flug', '8070003'], ['frankfurt flughafen', '8070003'],
+  ['berlin südkreuz', '8011113'], ['düsseldorf hbf', '8000085'], ['essen hbf', '8000098'],
+  ['hannover hbf', '8000152'], ['bremen hbf', '8000050'], ['freiburg hbf', '8000107'],
+  ['dortmund hbf', '8000080'], ['mannheim hbf', '8000244'], ['karlsruhe hbf', '8000191'],
+  ['würzburg hbf', '8000260'], ['augsburg hbf', '8000013'],
+  ['erfurt hbf', '8010099'], ['halle hbf', '8010147'], ['kiel hbf', '8000172'],
+  ['zürich hb', '8503000'], ['zurich hb', '8503000'], ['salzburg hbf', '8100002'], ['innsbruck hbf', '8100124'],
+  ['klagenfurt hbf', '8100153'], ['graz hbf', '8100118'], ['lintz hbf', '8100013'], ['bratislava hl.st.', '5600001'],
+  ['budapest keleti', '5500003'], ['warschau', '5100048'], ['warszawa', '5100048'],
 ]);
 
 function getAgent() {
@@ -58,6 +75,18 @@ async function resolve(name) {
       if (list.length > 0 && list[0].eva) return String(list[0].eva);
     }
   } catch {}
+  // Try bahn.de ort-lookup via Web Unblocker (extId = EVA). Only when configured.
+  try {
+    if (OXY.user && OXY.pass) {
+      const url = `https://www.bahn.de/web/api/reiseloesung/orte?suchbegriff=${encodeURIComponent(name)}&typ=ALL&limit=1`;
+      const r = await fetch(url, { headers: { 'x-oxylabs-geo-location': 'Germany', 'User-Agent': 'Mozilla/5.0', 'Accept': 'application/json' } });
+      if (r.ok) {
+        const json = await r.json().catch(() => null);
+        const hit = Array.isArray(json) ? json[0] : null;
+        if (hit && hit.extId) return String(hit.extId);
+      }
+    }
+  } catch {}
   return null;
 }
 
@@ -79,6 +108,74 @@ function toIsoFromYYMMDDHHMM(yyMMdd, hhmm){
   const hh=Number(hhmm.slice(0,2)); const mi=Number(hhmm.slice(2,4));
   const isSummer=mm>=3&&mm<=9; const offset=isSummer?2:1;
   return new Date(Date.UTC(yy,mm,dd,hh-offset,mi)).toISOString();
+}
+
+// --- Web fare API via Oxylabs Web Unblocker (real prices, from→to, +14d) ---
+// Uses curl because Web Unblocker routes different TLS fingerprints to different IP pools.
+// Node.js JA3 → blocked pool; curl JA3 → residential pool.
+async function tryWebFares(fromExtId, toExtId, whenDate) {
+  if (!OXY.user || !OXY.pass) return { skipped: 'oxylabs not configured' };
+  const pad = n => String(n).padStart(2, '0');
+  const date = `${whenDate.getFullYear()}-${pad(whenDate.getMonth()+1)}-${pad(whenDate.getDate())}`;
+  const time = `${pad(whenDate.getHours())}:${pad(whenDate.getMinutes())}:00`;
+  const traveller = [{ typ: 'ERWACHSENER', ermaessigungen: [{ art: 'KEINE_ERMAESSIGUNG', klasse: 'KLASSENLOS' }], anzahl: 1, alter: [] }];
+  const payload = JSON.stringify({
+    abfahrtsHalt: `A=1@L=${fromExtId}@`, anfrageZeitpunkt: `${date}T${time}`,
+    ankunftsHalt: `A=1@L=${toExtId}@`, ankunftSuche: 'ABFAHRT', klasse: 'KLASSE_2',
+    produktgattungen: ['ICE','EC_IC','IR','REGIONAL','SBAHN','BUS','SCHIFF','UBAHN','TRAM','ANRUFPFLICHTIG'],
+    reisende: traveller, schnelleVerbindungen: true, deutschlandTicketVorhanden: false,
+  });
+  try {
+    const cmd = [
+      'curl -sk',
+      `-x "http://${OXY.user}:${OXY.pass}@unblock.oxylabs.io:60000"`,
+      '-X POST',
+      '-H "Content-Type: application/json; charset=UTF-8"',
+      '-H "Accept: application/json"',
+      '-H "X-Oxylabs-Geo-Location: Germany"',
+      '-H "x-oxylabs-force-headers: 1"',
+      '-H "User-Agent: Mozilla/5.0"',
+      '-H "Origin: https://www.bahn.de"',
+      '-H "Referer: https://www.bahn.de/buchung/fahrplan/suche"',
+      `--max-time 60`,
+      `-d '${payload.replace(/'/g, "'\\''")}'`,
+      '"https://www.bahn.de/web/api/angebote/fahrplan"',
+    ].join(' ');
+    const stdout = execSync(cmd, { timeout: 65000, maxBuffer: 10 * 1024 * 1024 }).toString();
+    // curl outputs the JSON body; find the first { to parse
+    const jsonStart = stdout.indexOf('{');
+    if (jsonStart < 0) return { error: 'web-fares: no JSON in curl output' };
+    const json = JSON.parse(stdout.slice(jsonStart));
+    if (json.status === 'ERROR') return { blocked: true, error: json.code };
+    const verbindungen = json?.verbindungen || [];
+    if (verbindungen.length === 0) return { empty: true };
+    return { verbindungen };
+  } catch (e) {
+    return { error: `web-fares exception: ${e.message?.slice(0,100)}` };
+  }
+}
+
+function parseWebFares(verbindungen) {
+  const offers = [];
+  for (const v of verbindungen.slice(0, 8)) {
+    const segs = v.verbindungsAbschnitte || [];
+    if (!segs.length) continue;
+    const dep = segs[0]?.abfahrt?.sollzeit || segs[0]?.halte?.[0]?.abfahrt?.sollzeit;
+    const last = segs[segs.length-1];
+    const arr = last?.ankunft?.sollzeit || last?.halte?.[last.halte.length-1]?.ankunft?.sollzeit;
+    const vm = segs[0]?.verkehrsmittel;
+    const price = v.angebotsPreis?.betrag;
+    offers.push(offer({
+      provider: 'db', providerLabel: 'DB',
+      operator: vm?.überName || vm?.name || 'Deutsche Bahn',
+      product: vm?.name || vm?.kategorie || null,
+      departure: dep, arrival: arr,
+      price: typeof price === 'number' ? price : null,
+      currency: v.angebotsPreis?.waehrung || 'EUR',
+      url: `https://www.bahn.de/buchung?from=${encodeURIComponent(v.segments?.[0]?.origin?.name || v.verbindungsAbschnitte?.[0]?.abfahrtsOrt || '')}&to=${encodeURIComponent(v.verbindungsAbschnitte?.[0]?.ankunftsOrt || '')}`,
+    }));
+  }
+  return offers;
 }
 
 // --- RIS::Journeys attempt (supports +14d, real from→to) ---
@@ -137,6 +234,16 @@ export async function search({ from, to, when }) {
     return { status: 'empty', error: `db: no EVA mapping for ${from}(${fromId||'?'})/${to}(${toId||'?'}) - SBB übernimmt die Strecke` };
   }
   const whenDate = new Date(when);
+
+  // 0) Web fare API via Oxylabs (real prices). EVA IDs resolve from the same map / RIS::Stations.
+  const wf = await tryWebFares(fromId, toId, whenDate);
+  if (wf.verbindungen) {
+    const offers = parseWebFares(wf.verbindungen);
+    if (offers.length > 0) {
+      return { status: 'ok', offers, meta: { source: 'web-fares-oxy', note: null } };
+    }
+  }
+  if (wf.blocked) console.log(`[db] web-fares blocked (${wf.status || wf.error}) - fallback`);
 
   // 1) Try RIS::Journeys (ideal for comparator, supports +14d)
   const ris = await tryRisJourneys(fromId, toId, whenDate);
