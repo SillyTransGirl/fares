@@ -4,6 +4,13 @@
 <meta charset="utf-8">
 <meta name="robots" content="noindex, nofollow">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<!-- OG embed meta; server injects real values when ?from&to are present -->
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="fares">
+<meta property="og:title" content="fares">
+<meta property="og:description" content="Fare comparison across SBB, DB, Flix, CD/IDOS">
+<meta property="og:image" content="https://fare.sillytransfem.online/og.png">
+<meta name="twitter:card" content="summary_large_image">
 <title>fares</title>
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
@@ -159,6 +166,17 @@ async function go(){
 }
 // default date = today
 (()=>{const d=new Date();document.getElementById('date').value=d.toISOString().slice(0,10);})();
+// URL params (?from=&to=&date=) drive the embed page → prefill + immediate search
+(()=>{
+  const p=new URLSearchParams(location.search);
+  const from=p.get('from'), to=p.get('to'), date=p.get('date');
+  if(from)document.getElementById('from').value=from;
+  if(to)document.getElementById('to').value=to;
+  if(date){
+    const d=new Date(date+'T12:00:00Z');
+    if(!isNaN(d))document.getElementById('date').value=d.toISOString().slice(0,10);
+  }
+})();
 go();
 </script>
 </body>

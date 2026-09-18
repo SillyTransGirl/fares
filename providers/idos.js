@@ -5,6 +5,22 @@ const UA = 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Geck
 
 const OP_RE = /RegioJet|STUDENT AGENCY|České dráhy|ČD|Arriva|Leo|FlixBus|FlixTrain|GW Train|Lear|RailJet|Nightjet|ÖBB|RJX|RJ /g;
 
+// Long-distance running-number prefixes (Deutschlandticket covers the rest: RE/RB/S/IRE …).
+const LONG_DISTANCE_PREFIXES = new Set(['ICE', 'IC', 'EC', 'EN', 'NJ', 'EJC', 'TGV', 'IEC', 'THA', 'EUR', 'RJ', 'WB', 'CNL', 'FLX', 'D']);
+
+// idos vehicle codes come in several dialects. "R 4615" = German RE55 4615 (D-Ticket ok),
+// but Czech "R 9xx" = Rychlík (express, NOT covered) and "Bus 060" is a Czech bus. Only mark
+// unambiguous German regional services: RE/RB/S/IRE/R with a 4-digit train number.
+const GERMAN_LOCAL = /^(RE|RB|S|IRE|MEX)\s/i;
+const GERMAN_R_4DIGIT = /^R\s0?[1-9][0-9]{3}\b/i;
+
+function isLocal(name) {
+  const token = (name || '').trim();
+  if (!token) return false;
+  if (LONG_DISTANCE_PREFIXES.has(token.split(/\s+/)[0].toUpperCase())) return false;
+  return GERMAN_LOCAL.test(token) || GERMAN_R_4DIGIT.test(token);
+}
+
 function parseConnections(html) {
   const heads = html.split(/class="connection-head"/);
   const rows = [];
@@ -45,6 +61,10 @@ function parseConnections(html) {
     const durM = clean.match(/([0-9]{1,3})\s*hod\s*([0-9]{1,2})\s*min/);
     const opM = head.match(OP_RE);
     const vehM = clean.match(/\|([A-Za-z]{1,5}\s?[0-9]{1,5}[0-9A-Za-z ]{0,12})\|/);
+    const veh = vehM ? vehM[1].trim() : null;
+    // Regional chain → covered by Deutschlandticket, no fare needed.
+    let note = null;
+    if (veh && isLocal(veh)) note = 'im Deutschlandticket';
 
     const depTime = first && first.time;
     const arrTime = last && last.time;
@@ -63,11 +83,12 @@ function parseConnections(html) {
     rows.push(offer({
       provider: 'idos', providerLabel: 'CD/IDOS',
       operator: opM ? opM[0].replace(/, a\.s\./g, '') : null,
-      product: vehM ? vehM[1].trim() : null,
+      product: veh,
       departure: depIso, arrival: arrIso,
       departureShort: first && first.at, arrivalShort: last && last.at,
       price: null, currency: 'CZK',
       bookedOut: false,
+      note,
       url: 'https://idos.cz/vlakyautobusymhdvse/spojeni/',
     }));
   }

@@ -4,6 +4,8 @@ import { readFile } from 'node:fs/promises';
 import { runAll } from './providers/index.js';
 import * as sbb from './providers/sbb.js';
 import { cacheGet, cacheSet, appendHistory, readHistory } from './lib/store.js';
+import { ogCard } from './lib/og.js';
+import { toDisplayPrice } from './lib/currency.js';
 
 const PORT = Number(process.env.FARES_PORT || 4055);
 const UA = 'fare-comparator@https://sillytransfem.online (personal fare monitoring)';
@@ -17,6 +19,8 @@ const DEFAULT_ROUTES = [
 // Nach RIS::Journeys Freigabe: dateOffsetDays wieder auf 14 setzen - Provider nutzt dann automatisch RIS::Journeys für +14d
 
 const routeKey = (r) => `${r.from}→${r.to}`;
+
+const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
 async function doSearch(params, live = false) {
   const key = `${params.from}|${params.to}|${params.when}`;
@@ -60,8 +64,49 @@ const server = http.createServer(async (req, res) => {
 
   try {
     if (u.pathname === '/' || u.pathname === '/index.html') {
-      const html = await readFile(new URL('./web/index.html', import.meta.url), 'utf8');
+      let html = await readFile(new URL('./web/index.html', import.meta.url), 'utf8');
+      const from = (u.searchParams.get('from') || '').trim();
+      const to = (u.searchParams.get('to') || '').trim();
+      let ogTitle = 'fares';
+      let ogDesc = 'Fare comparison across SBB, DB, Flix, CD/IDOS';
+      let ogImage = 'https://fare.sillytransfem.online/og.png';
+      if (from && to) {
+        try {
+          const when = u.searchParams.get('date') ? new Date(u.searchParams.get('date') + 'T12:00:00Z') : new Date();
+          const result = await doSearch({ from, to, when });
+          const priced = (result.offers || []).filter((o) => typeof o.price === 'number');
+          const cheapest = priced.sort((a, b) => a.price - b.price)[0];
+          if (cheapest) {
+            ogTitle = `${from} → ${to}: ab ${toDisplayPrice(cheapest.price, cheapest.currency, 'EUR')} EUR`;
+            ogDesc = `Cheapest fare ${cheapest.price.toFixed(2)} ${cheapest.currency} (${cheapest.providerLabel}) · ${priced.length} priced connection${priced.length === 1 ? '' : 's'}`;
+            ogImage = `https://fare.sillytransfem.online/og.png?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}${u.searchParams.get('date') ? '&date=' + u.searchParams.get('date') : ''}`;
+          } else {
+            ogTitle = `${from} → ${to}: no priced fares`;
+            ogDesc = 'Only timetable results (no bookable price) for this route & date.';
+          }
+        } catch { /* fall back to generic embed */ }
+      }
+      html = html
+        .replace(/(<meta property="og:title" content=")([^"]*)"/, `$1${esc(ogTitle)}"`)
+        .replace(/(<meta property="og:description" content=")([^"]*)"/, `$1${esc(ogDesc)}"`)
+        .replace(/(<meta property="og:image" content=")([^"]*)"/, `$1${esc(ogImage)}"`);
       return send(200, html, 'text/html; charset=utf-8');
+    }
+    if (u.pathname === '/og.png') {
+      const from = (u.searchParams.get('from') || 'Praha').trim();
+      const to = (u.searchParams.get('to') || 'Berlin Hbf').trim();
+      const date = (u.searchParams.get('date') || new Date().toISOString().slice(0, 10)).slice(0, 10);
+      let label = '', price = null, currency = 'EUR';
+      try {
+        const when = new Date(date + 'T12:00:00Z');
+        const result = await doSearch({ from, to, when });
+        const priced = (result.offers || []).filter((o) => typeof o.price === 'number').sort((a, b) => a.price - b.price);
+        const c = priced[0];
+        if (c) { label = c.providerLabel + ': '; price = c.price; currency = c.currency; }
+      } catch { /* default values */ }
+      res.setHeader('Content-Type', 'image/png');
+      res.setHeader('Cache-Control', 'public, max-age=900');
+      return res.end(ogCard({ from, to, date, label, price, currency }));
     }
     if (u.pathname === '/api/search') {
       const from = (u.searchParams.get('from') || '').trim();
