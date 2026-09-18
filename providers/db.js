@@ -132,7 +132,10 @@ async function tryTimetables(fromId, whenDate) {
 
 export async function search({ from, to, when }) {
   const fromId = await resolve(from); const toId = await resolve(to);
-  if (!fromId || !toId) return { status: 'error', error: `station not resolved: ${from} (${fromId||'?'}) / ${to} (${toId||'?'}) - EVA mapping or RIS::Stations search failed` };
+  if (!fromId || !toId) {
+    // Station not resolvable for DB (no EVA). SBB resolves it and covers the route → not an error.
+    return { status: 'empty', error: `db: no EVA mapping for ${from}(${fromId||'?'})/${to}(${toId||'?'}) - SBB übernimmt die Strecke` };
+  }
   const whenDate = new Date(when);
 
   // 1) Try RIS::Journeys (ideal for comparator, supports +14d)
