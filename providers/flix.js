@@ -85,6 +85,11 @@ export async function search({ from, to, when }) {
     for (const trip of trips) {
       const stationFrom = (trip.from && trip.from.name) || from;
       const stationTo = (trip.to && trip.to.name) || to;
+      // Flix returns the prebuilt booking URL per trip group (rel=shop:search)
+      // with correct station ids, date format and currency prefilled.
+      const shopRef = Array.isArray(trip.links) ? trip.links.find((l) => l && l.rel === 'shop:search') : null;
+      const shopUrl = (shopRef && shopRef.href)
+        || `https://shop.flixbus.com/search?departureCity=${fromId}&arrivalCity=${toId}&rideDate=${departureDate}&adult=1`;
       for (const it of Array.isArray(trip.items) ? trip.items : []) {
         const seats = it.available && typeof it.available.seats === 'number' ? it.available.seats : 0;
         if (seats <= 0) continue;
@@ -102,7 +107,7 @@ export async function search({ from, to, when }) {
           price,
           currency: 'EUR',
           bookedOut: price == null,
-          url: `https://shop.flixbus.com/search?from_city_id=${fromId}&to_city_id=${toId}&rideDate=${date.toISOString().slice(0, 10)}&adult=1`,
+          url: shopUrl,
         }));
       }
     }
