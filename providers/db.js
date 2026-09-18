@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import https from 'node:https';
-import { execSync } from 'node:child_process';
+import { execFile } from 'node:child_process';
 import { offer } from '../lib/normalize.js';
 
 // Integrated DB provider: web fare API via Oxylabs Web Unblocker + RIS::Journeys + Timetables fallbacks
@@ -110,35 +110,61 @@ function toIsoFromYYMMDDHHMM(yyMMdd, hhmm){
   return new Date(Date.UTC(yy,mm,dd,hh-offset,mi)).toISOString();
 }
 
+function resolveTraveller(age, bahncard) {
+  let typ = 'ERWACHSENER';
+  if (age != null) {
+    if (age < 5) typ = 'KLEINKIND';
+    else if (age < 15) typ = 'KIND';
+    else if (age < 27) typ = 'JUGENDLICH';
+    else if (age < 65) typ = 'ERWACHSENER';
+    else typ = 'SENIOR';
+  }
+  const ermaessigungen = [{ art: 'KEINE_ERMAESSIGUNG', klasse: 'KLASSENLOS' }];
+  if (bahncard) {
+    const bc = bahncard.toUpperCase().replace('BAHN_CARD_','').replace('BC','');
+    if (bc === '25_1' || bc === '251') ermaessigungen[0] = { art: 'BAHNCARD25', klasse: 'KLASSE_2' };
+    else if (bc === '25_2' || bc === '252') ermaessigungen[0] = { art: 'BAHNCARD25', klasse: 'KLASSE_1' };
+    else if (bc === '50_1' || bc === '501') ermaessigungen[0] = { art: 'BAHNCARD50', klasse: 'KLASSE_2' };
+    else if (bc === '50_2' || bc === '502') ermaessigungen[0] = { art: 'BAHNCARD50', klasse: 'KLASSE_1' };
+  }
+  return [{ typ, ermaessigungen, anzahl: 1, alter: age != null ? [age] : [] }];
+}
+
 // --- Web fare API via Oxylabs Web Unblocker (real prices, from→to, +14d) ---
 // Uses curl because Web Unblocker routes different TLS fingerprints to different IP pools.
 // Node.js JA3 → blocked pool; curl JA3 → residential pool.
 // 2-step: fahrplan → ctxRecon → recon (delivers reiseAngebote with Sparpreis/Flexpreis)
-async function tryWebFares(fromExtId, toExtId, whenDate, sparpreis = false) {
+async function tryWebFares(fromExtId, toExtId, whenDate, sparpreis = false, age, bahncard) {
   if (!OXY.user || !OXY.pass) return { skipped: 'oxylabs not configured' };
   const pad = n => String(n).padStart(2, '0');
   const date = `${whenDate.getFullYear()}-${pad(whenDate.getMonth()+1)}-${pad(whenDate.getDate())}`;
   const time = `${pad(whenDate.getHours())}:${pad(whenDate.getMinutes())}:00`;
-  const traveller = [{ typ: 'ERWACHSENER', ermaessigungen: [{ art: 'KEINE_ERMAESSIGUNG', klasse: 'KLASSENLOS' }], anzahl: 1, alter: [] }];
+  const traveller = resolveTraveller(age, bahncard);
   const proxy = `http://${OXY.user}:${OXY.pass}@unblock.oxylabs.io:60000`;
-  const curlHeaders = [
-    '-H "Content-Type: application/json; charset=UTF-8"',
-    '-H "Accept: application/json"',
-    '-H "X-Oxylabs-Geo-Location: Germany"',
-    '-H "x-oxylabs-force-headers: 1"',
-    '-H "User-Agent: Mozilla/5.0"',
-    '-H "Origin: https://www.bahn.de"',
-    '-H "Referer: https://www.bahn.de/buchung/fahrplan/suche"',
-  ].join(' ');
 
-  function curlPost(url, body) {
-    const cmd = [
-      'curl -sk', `-x "${proxy}"`, '-X POST', curlHeaders,
-      '--max-time 60',
-      `-d '${JSON.stringify(body).replace(/'/g, "'\\''")}'`,
-      `"${url}"`,
-    ].join(' ');
-    return execSync(cmd, { timeout: 65000, maxBuffer: 10 * 1024 * 1024 }).toString();
+  function curlPost(url, body, timeoutSec = 60) {
+    const tmpFile = `/tmp/_oxy_${Date.now()}_${Math.random().toString(36).slice(2)}.json`;
+    try {
+      fs.writeFileSync(tmpFile, JSON.stringify(body));
+      return new Promise((resolve, reject) => {
+        execFile('curl', [
+          '-sk', '-x', proxy, '-X', 'POST',
+          '-H', 'Content-Type: application/json; charset=UTF-8',
+          '-H', 'Accept: application/json',
+          '-H', 'X-Oxylabs-Geo-Location: Germany',
+          '-H', 'x-oxylabs-force-headers: 1',
+          '-H', 'User-Agent: Mozilla/5.0',
+          '-H', 'Origin: https://www.bahn.de',
+          '-H', 'Referer: https://www.bahn.de/buchung/fahrplan/suche',
+          '--max-time', String(timeoutSec),
+          '-d', `@${tmpFile}`,
+          url,
+        ], { timeout: (timeoutSec + 5) * 1000, maxBuffer: 10 * 1024 * 1024 }, (err, stdout) => {
+          try { fs.unlinkSync(tmpFile); } catch {}
+          resolve(err ? '' : (stdout || ''));
+        });
+      });
+    } catch { return Promise.resolve(''); }
   }
 
   function parseJson(stdout) {
@@ -155,34 +181,40 @@ async function tryWebFares(fromExtId, toExtId, whenDate, sparpreis = false) {
       produktgattungen: ['ICE','EC_IC','IR','REGIONAL','SBAHN','BUS','SCHIFF','UBAHN','TRAM','ANRUFPFLICHTIG'],
       reisende: traveller, schnelleVerbindungen: true, deutschlandTicketVorhanden: false,
     };
-    const fahrplanJson = parseJson(curlPost('https://www.bahn.de/web/api/angebote/fahrplan', fahrplanPayload));
+    const fahrplanJson = parseJson(await curlPost('https://www.bahn.de/web/api/angebote/fahrplan', fahrplanPayload));
     if (!fahrplanJson) return { error: 'web-fares: no JSON from fahrplan' };
     if (fahrplanJson.status === 'ERROR') return { blocked: true, error: fahrplanJson.code };
     const verbindungen = fahrplanJson?.verbindungen || [];
     if (verbindungen.length === 0) return { empty: true };
 
-    if (!sparpreis) return { verbindungen };
-
-    // Step 2: recon for each connection → reiseAngebote with Sparpreis/Flexpreis
-    const enriched = [];
-    for (const v of verbindungen.slice(0, 6)) {
-      if (!v.ctxRecon) { enriched.push(v); continue; }
-      try {
-        const reconPayload = {
-          klasse: 'KLASSE_2',
-          reisende: traveller,
-          ctxRecon: v.ctxRecon,
-          deutschlandTicketVorhanden: false,
-        };
-        const reconJson = parseJson(curlPost('https://www.bahn.de/web/api/angebote/recon', reconPayload));
-        const rv = reconJson?.verbindungen?.[0];
-        if (rv?.reiseAngebote?.length) {
-          v.reiseAngebote = rv.reiseAngebote;
-        }
-      } catch {}
-      enriched.push(v);
+    // Step 2: recon for connections missing price (parallel, max 3, 15s timeout each)
+    const noPrice = verbindungen.filter(v => !v.angebotsPreis?.betrag && v.ctxRecon).slice(0, 3);
+    if (noPrice.length > 0) {
+      await Promise.all(noPrice.map(async v => {
+        try {
+          const reconPayload = { klasse: 'KLASSE_2', reisende: traveller, ctxRecon: v.ctxRecon, deutschlandTicketVorhanden: false };
+          const reconJson = parseJson(await curlPost('https://www.bahn.de/web/api/angebote/recon', reconPayload, 15));
+          const rv = reconJson?.verbindungen?.[0];
+          if (rv?.angebotsPreis?.betrag) v.angebotsPreis = rv.angebotsPreis;
+          if (rv?.reiseAngebote?.length) v.reiseAngebote = rv.reiseAngebote;
+        } catch {}
+      }));
     }
-    return { verbindungen: enriched };
+    // Sparpreis enrichment (parallel, max 3)
+    if (sparpreis) {
+      const sparCandidates = verbindungen.filter(v => v.ctxRecon && !v.reiseAngebote).slice(0, 3);
+      if (sparCandidates.length > 0) {
+        await Promise.all(sparCandidates.map(async v => {
+          try {
+            const reconPayload = { klasse: 'KLASSE_2', reisende: traveller, ctxRecon: v.ctxRecon, deutschlandTicketVorhanden: false };
+            const reconJson = parseJson(await curlPost('https://www.bahn.de/web/api/angebote/recon', reconPayload, 15));
+            const rv = reconJson?.verbindungen?.[0];
+            if (rv?.reiseAngebote?.length) v.reiseAngebote = rv.reiseAngebote;
+          } catch {}
+        }));
+      }
+    }
+    return { verbindungen };
   } catch (e) {
     return { error: `web-fares exception: ${e.message?.slice(0,100)}` };
   }
@@ -280,7 +312,7 @@ async function tryTimetables(fromId, whenDate) {
   return res;
 }
 
-export async function search({ from, to, when, sparpreis }) {
+export async function search({ from, to, when, sparpreis, age, bahncard }) {
   const fromId = await resolve(from); const toId = await resolve(to);
   if (!fromId || !toId) {
     // Station not resolvable for DB (no EVA). SBB resolves it and covers the route → not an error.
@@ -289,14 +321,14 @@ export async function search({ from, to, when, sparpreis }) {
   const whenDate = new Date(when);
 
   // 0) Web fare API via Oxylabs (real prices). EVA IDs resolve from the same map / RIS::Stations.
-  const wf = await tryWebFares(fromId, toId, whenDate, sparpreis);
+  const wf = await tryWebFares(fromId, toId, whenDate, sparpreis, age, bahncard);
   if (wf.verbindungen) {
     const offers = parseWebFares(wf.verbindungen, sparpreis);
     if (offers.length > 0) {
       return { status: 'ok', offers, meta: { source: 'web-fares-oxy', note: sparpreis ? 'Sparpreis' : 'Flexpreis' } };
     }
   }
-  if (wf.blocked) console.log(`[db] web-fares blocked (${wf.status || wf.error}) - fallback`);
+  if (wf.error || wf.blocked) console.log(`[db] web-fares: ${wf.error || 'blocked ' + wf.status} → fallback`);
 
   // 1) Try RIS::Journeys (ideal for comparator, supports +14d)
   const ris = await tryRisJourneys(fromId, toId, whenDate);

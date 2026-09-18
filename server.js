@@ -30,7 +30,7 @@ async function doSearch(params, live = false) {
   }
   // normalize station names, keep times
   const when = new Date(params.when || Date.now());
-  const result = await runAll({ from: params.from, to: params.to, when, sparpreis: !!params.sparpreis }, 25000);
+  const result = await runAll({ from: params.from, to: params.to, when, sparpreis: !!params.sparpreis, age: params.age, bahncard: params.bahncard }, 25000);
   cacheSet(key, result);
   return result;
 }
@@ -113,9 +113,11 @@ const server = http.createServer(async (req, res) => {
       const to = (u.searchParams.get('to') || '').trim();
       const date = u.searchParams.get('date');
       const sparpreis = u.searchParams.get('sparpreis') === 'true';
+      const age = parseInt(u.searchParams.get('age')) || undefined;
+      const bahncard = u.searchParams.get('bahncard') || undefined;
       if (!from || !to) return send(400, { error: 'from and to are required' });
       const when = date ? new Date(date + 'T12:00:00Z') : new Date();
-      const result = await doSearch({ from, to, when, sparpreis });
+      const result = await doSearch({ from, to, when, sparpreis, age, bahncard });
       return send(200, result);
     }
     if (u.pathname === '/api/suggest') {
