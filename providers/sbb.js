@@ -216,6 +216,18 @@ export async function search({ from, to, when }) {
       let note = null;
       if (local) note = 'im Deutschlandticket';
       else if (hasFlx && !price) note = 'Preis via flixtrain.de (nicht über SBB buchbar)';
+      const depTime = s.departure && s.departure.time ? new Date(s.departure.time) : null;
+      const datePart = depTime ? depTime.toISOString().slice(0, 10) : '';
+      const timePart = depTime ? `${String(depTime.getUTCHours()).padStart(2, '0')}:${String(depTime.getUTCMinutes()).padStart(2, '0')}` : '';
+      const fstop = s.firstStopPlace || {};
+      const lstop = s.lastStopPlace || {};
+      // Official SBB deep-link format (stops JSON array + date/time, RFC-3986 encoded)
+      const url = 'https://www.sbb.ch/de?' + [
+        `stops=${encodeURIComponent(JSON.stringify([{ value: fstop.id || fromId, type: 'ID', label: fstop.name || from }, { value: lstop.id || toId, type: 'ID', label: lstop.name || to }]))}`,
+        datePart && `date=${encodeURIComponent(`"${datePart}"`)}`,
+        timePart && `time=${encodeURIComponent(`"${timePart}"`)}`,
+        `moment=${encodeURIComponent('"DEPARTURE"')}`,
+      ].filter(Boolean).join('&');
       return offer({
         provider: 'sbb', providerLabel: 'CH SBB',
         operator: mode ? { HIGH_SPEED_TRAIN: 'SBB', INTERCITY: 'SBB IC', INTERREGIO: 'SBB IR', REGIO: 'SBB Regio', SHIP: 'SBB Schifffahrt' }[mode] || 'SBB' : null,
@@ -226,7 +238,7 @@ export async function search({ from, to, when }) {
         currency: price ? price.currency : 'CHF',
         bookedOut: !local && !price && !hasFlx,
         note,
-        url: `https://www.sbb.ch/fahrplan?from=${encodeURIComponent(s.firstStopPlace && s.firstStopPlace.name || from)}&to=${encodeURIComponent(s.lastStopPlace && s.lastStopPlace.name || to)}`,
+        url,
       });
     });
     return { status: 'ok', offers, meta: { source: 'graphql.www.sbb.ch', note: 'prices in CHF (SBB standard fare)' } };
