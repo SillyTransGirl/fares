@@ -15,18 +15,18 @@ and serves them on a tiny JSON API with a single-page comparison view.
   GET /api/search             │  providers/index.js  runAll()              │
    ──────────►  server.js  ──►│  runs every provider in parallel           │
                               │  with a per-provider timeout (25s)         │
-                              │  ┌──────────┬──────────┬───────────┬─────┐  │
-                              │  │ DB       │ ÖBB      │ Flix      │ ... │  │
-                              │  └────┬─────┴────┬─────┴────┬──────┴─────┘  │
-                              │       │          │          │               │
-                              └───────┼──────────┼──────────┼───────────────┘
-                                      │          │          │
-                                official DB    hafas-client  FlixBus/FlixTrain
-                                Marketplace    (ÖBB)         search API
-                                APIs (no key)  └── fare quotes unreliable / absent
-                                      │
-                                ├── price: null ──► booking-link fallback
-                                └── (RIS::Journeys pending approval)
+│  ┌──────────┬──────────┬───────────┬─────┐  │
+                               │  │ DB       │ Flix     │ SBB       │ ... │  │
+                               │  └────┬─────┴────┬─────┴────┬──────┴─────┘  │
+                               │       │          │          │               │
+                               └───────┼──────────┼──────────┼───────────────┘
+                                       │          │          │
+                                 official DB    FlixBus/     graphql.www.sbb.ch
+                                 Marketplace    FlixTrain    (timetable + prices)
+                                 APIs (no key)  mobile API
+                                       │
+                                 ├── price: null ──► booking-link fallback
+                                 └── (RIS::Journeys pending approval)
 
   Every offer is normalized via lib/normalize.js → one schema:
   { provider, operator, product, departure, arrival, durationMin,
@@ -37,7 +37,7 @@ and serves them on a tiny JSON API with a single-page comparison view.
 
 ## Providers
 
-Providers are queried in order **SBB → DB → ÖBB → Flix → idos**. SBB is run first
+Providers are queried in order **SBB → DB → Flix → idos**. SBB is run first
 because it reliably returns both timetable and prices for German and international routes.
 
 | Provider | Data source | Auth | Prices | Notes |
@@ -46,7 +46,7 @@ because it reliably returns both timetable and prices for German and internation
 | **DB** (`db.js`) | [DB API Marketplace](https://developers.deutschebahn.com) — Timetables 1.0.274 (Free), RIS::Stations | Client ID/Secret (`DB-Client-Id`, `DB-Api-Key`) | ❌ | Returns `status: empty` when no SBB mapping exists ("SBB übernimmt"); RIS::Journeys pending approval |
 | **ÖBB** (`oebb.js`) | [`hafas-client`](https://github.com/derhuerst/hafas-client) ÖBB profile | none | ❌ | Cloudflare blocks shop; HAFAS tickets endpoint returns nothing — timetable only |
 | **Flix** (`flix.js`) | FlixBus/FlixTrain mobile API (`/search/autocomplete/cities` + `/mobile/v1/trip/search.json`) | mobile auth token (public, reverse-engineered) | ✅ (EUR) | Bus + FlixTrain; works directly from server (no proxy required); fallback SOCKS5 via `fare-tunnel.service` |
-| **CD/IDOS** (`idos.js`) | `idos.cz` HTML scraping (connection form POST) | none | ❌ | Czech timetable incl. cross-border (RegioJet, ČD, ÖBB…); prices not extracted |
+| **CD/IDOS** (`idos.js`) | `idos.cz` HTML scraping (connection form POST) | none | ❌ | Czech timetable incl. cross-border (RegioJet, ČD); prices not extracted |
 
 ## Setup
 
@@ -124,7 +124,7 @@ matches (e.g. multiple SBB results departing from different Hbf sub-platforms).
 `server.js` scrapes a set of default routes on start and every 30 minutes,
 appending each result to `history/<from>→<to>.jsonl` (one JSON object per line).
 
-## Anti-bot reality (why DB/ÖBB prices are hard)
+## Anti-bot reality (why DB prices are hard)
 
 - **DB** (`bahn.de`) is protected by **Akamai Bot Manager**: a heavyweight
   obfuscated sensor script fingerprints canvas/WebGL, `navigator.platform`,
@@ -133,7 +133,6 @@ appending each result to `history/<from>→<to>.jsonl` (one JSON object per line
   Docker `/tmp/curl-impersonate` (Chrome TLS fingerprint) only bypasses
   fingerprint checks, not the cookie challenge. See `grab-cookies.ps1` (a
   CDP-based helper for extracting the real cookies from a user's session).
-- **ÖBB shop** is behind **Cloudflare**, which rejects all scripted clients.
 - **SBB** is the least protected: a public GraphQL API (`graphql.www.sbb.ch`,
   used by the sbb.ch site itself) returns both timetable and prices with just
   a few Apollo client headers — no login, no captcha. **Flix** mobile API
@@ -156,5 +155,4 @@ A second unit, `fare-tunnel.service`, runs `tunnel.mjs` — a SOCKS5 proxy
 
 - [ ] RIS::Journeys approval → DB gets real from→to journeys (today + up to 14 days)
 - [ ] DB prices via Akamai `_abck` cookie injection (see `grab-cookies.ps1`)
-- [ ] ÖBB prices (Cloudflare bypass / different endpoint)
 - [ ] CD/IDOS price extraction from connection HTML
