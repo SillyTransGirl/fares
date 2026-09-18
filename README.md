@@ -43,7 +43,7 @@ and serves them on a tiny JSON API with a single-page comparison view.
 | **ÖBB** (`oebb.js`) | [`hafas-client`](https://github.com/derhuerst/hafas-client) ÖBB profile | none | ❌ | `refreshJourney(…, { tickets: true })` returns no tickets via HAFAS; Cloudflare blocks the shop APIs |
 | **Flix** (`flix.js`) | FlixBus/FlixTrain v4 search + cities API | none | ✅ | Bus + FlixTrain; blocked from plain datacenter IPs (403) — needs residential/WARP egress |
 | **CD/IDOS** (`idos.js`) | `idos.cz` HTML scraping (connection form POST) | none | ❌ | Czech timetable incl. cross-border (RegioJet, ČD, ÖBB…); prices not extracted |
-| **CH SBB** (`sbb.js`) | `transport.opendata.ch` v1 (community API) | none | ❌ | Swiss timetable only, price via sbb.ch booking link |
+| **CH SBB** (`sbb.js`) | `graphql.www.sbb.ch` (the API the sbb.ch website itself uses) | none (Apollo client headers) | ✅ | Timetable + prices in CHF (SBB standard fare); no captcha |
 
 ## Setup
 
@@ -114,7 +114,10 @@ appending each result to `history/<from>→<to>.jsonl` (one JSON object per line
   fingerprint checks, not the cookie challenge. See `grab-cookies.ps1` (a
   CDP-based helper for extracting the real cookies from a user's session).
 - **ÖBB shop** is behind **Cloudflare**, which rejects all scripted clients.
-- **Flix** and **SBB (opendata)** are the most permissive today.
+- **SBB** is the least protected: a public GraphQL API (`graphql.www.sbb.ch`,
+  used by the sbb.ch site itself) returns both timetable and prices with just
+  a few Apollo client headers — no login, no captcha. **Flix** also works
+  (needs residential/WARP egress).
 
 ## Deployment
 
