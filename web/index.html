@@ -1,0 +1,65 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="robots" content="noindex, nofollow">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>fares</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#0a0505;color:#c9c9c9;font-family:monospace;padding:3vh 4vw}
+h1{color:#8b0000;font-size:2.2rem;font-weight:900;letter-spacing:-1px;margin-bottom:3vh}
+input,button{background:#151010;color:#c9c9c9;border:1px solid #3a2020;font-family:monospace;padding:8px 10px;font-size:1rem}
+button{cursor:pointer}
+button:hover{background:#2a1010}
+.grid{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:3vh}
+table{width:100%;border-collapse:collapse}
+th,td{text-align:left;padding:8px 10px;border-bottom:1px solid #241414;font-size:.95rem}
+th{color:#8b0000}
+.price{color:#ff5c5c;font-weight:900}
+.bad{color:#6aa;font-size:.8rem}
+.stat{display:inline-block;margin-right:12px;font-size:.85rem}
+.stat.ok{color:#6b8;}.stat.error,.stat.blocked,.stat.timeout{color:#b33}.stat.empty{color:#996}
+.hint{color:#555;font-size:.8rem;margin-top:4vh}
+</style>
+</head>
+<body>
+<h1>fares</h1>
+<div class="grid">
+<input id="from" placeholder="from" value="Praha">
+<input id="to" placeholder="to" value="Berlin Hbf">
+<input id="date" type="date">
+<button onclick="go()">search fares</button>
+</div>
+<div id="stats"></div>
+<table id="rows"><thead><tr><th>when</th><th>operator</th><th>train</th><th>duration</th><th>price</th><th>from → to</th></tr></thead><tbody></tbody></table>
+<p class="hint" id="hint"></p>
+<script>
+const fmt=(iso)=>{if(!iso)return'';const d=new Date(iso);return d.toLocaleString('en-GB',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'});};
+const dur=(m)=>m==null?'—':(Math.floor(m/60)+'h '+(m%60)+'m');
+const money=(o)=>o.price==null?'(quote)' : o.price.toFixed(2)+' '+o.currency;
+async function go(){
+  const from=document.getElementById('from').value.trim();
+  const to=document.getElementById('to').value.trim();
+  const date=document.getElementById('date').value;
+  const stats=document.getElementById('stats');
+  const tbody=document.querySelector('#rows tbody');
+  stats.innerHTML='searching…';
+  const u='/api/search?from='+encodeURIComponent(from)+'&to='+encodeURIComponent(to)+(date?'&date='+date:'');
+  try{
+    const r=await (await fetch(u)).json();
+    stats.innerHTML=(r.statuses||[]).map(s=>`<span class="stat ${s.status}">${s.label}: ${s.status}${s.error?' — '+s.error:''}</span>`).join('')||'no providers';
+    tbody.innerHTML=(r.offers||[]).map(o=>`<tr>
+      <td>${fmt(o.departure)}</td>
+      <td>${o.operator||'—'}</td>
+      <td>${o.product||'—'}</td>
+      <td>${dur(o.durationMin)}</td>
+      <td class="price">${money(o)}</td>
+      <td class="bad">${o.providerLabel}${o.bookedOut?' · sold out':''}</td>
+    </tr>`).join('')||'<tr><td colspan="6">no offers</td></tr>';
+  }catch(e){stats.innerHTML='error: '+e.message;}
+}
+go();
+</script>
+</body>
+</html>

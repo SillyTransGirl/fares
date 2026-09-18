@@ -1,0 +1,23 @@
+{
+  "name": "fares",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "multi-operator European rail/bus fare scraper + comparator",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "db-vendo-client": "*",
+    "hafas-client": "*",
+    "https-proxy-agent": "^9.1.0",
+    "playwright": "^1.63.0",
+    "puppeteer-core": "^25.11.0",
+    "puppeteer-extra": "^3.3.6",
+    "puppeteer-extra-plugin-stealth": "^2.11.2",
+    "socks": "^2.8.10",
+    "socks-proxy-agent": "^10.1.0",
+    "undici": "^8.10.2"
+  }
+}

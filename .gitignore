@@ -1,0 +1,28 @@
+node_modules/
+
+# secrets
+.env
+*.pem
+*.key
+*.crt
+.netrc
+
+# large binary spinner artifacts
+obscura
+obscura-worker
+obscura-*.tar.gz
+
+# runtime data / logs
+history/
+*.jsonl
+
+# stale nested duplicate project
+fares/
+
+# debug tunnel variants containing proxy creds
+socks_debug.mjs
+socks_robust.mjs
+socks_tunnel.mjs
+
+# scratch
+*.log
