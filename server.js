@@ -23,14 +23,14 @@ const routeKey = (r) => `${r.from}→${r.to}`;
 const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
 async function doSearch(params, live = false) {
-  const key = `${params.from}|${params.to}|${params.when}`;
+  const key = `${params.from}|${params.to}|${params.when}|${params.sparpreis ? 'spar' : 'flex'}`;
   if (!live) {
     const cached = cacheGet(key);
     if (cached) return cached;
   }
   // normalize station names, keep times
   const when = new Date(params.when || Date.now());
-  const result = await runAll({ from: params.from, to: params.to, when }, 25000);
+  const result = await runAll({ from: params.from, to: params.to, when, sparpreis: !!params.sparpreis }, 25000);
   cacheSet(key, result);
   return result;
 }
@@ -112,9 +112,10 @@ const server = http.createServer(async (req, res) => {
       const from = (u.searchParams.get('from') || '').trim();
       const to = (u.searchParams.get('to') || '').trim();
       const date = u.searchParams.get('date');
+      const sparpreis = u.searchParams.get('sparpreis') === 'true';
       if (!from || !to) return send(400, { error: 'from and to are required' });
       const when = date ? new Date(date + 'T12:00:00Z') : new Date();
-      const result = await doSearch({ from, to, when });
+      const result = await doSearch({ from, to, when, sparpreis });
       return send(200, result);
     }
     if (u.pathname === '/api/suggest') {
