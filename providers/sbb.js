@@ -22,7 +22,32 @@ const TRANSPORT_MODES = [
   'TRAMWAY', 'BUS', 'SHIP', 'CABLEWAY_GONDOLA_CHAIRLIFT_FUNICULAR', 'SPECIAL_TRAIN',
 ];
 
+// Local services: covered by Deutschlandticket (and similar national flat passes) → no price query.
+const LOCAL_MODES = new Set(['REGIO', 'URBAN_TRAIN', 'TRAMWAY', 'BUS', 'SHIP', 'CABLEWAY_GONDOLA_CHAIRLIFT_FUNICULAR']);
+// Long-distance running numbers (train-class horarium, railsystem runs the whole route fare).
+const LONG_DISTANCE_PREFIXES = new Set(['ICE', 'IC', 'EC', 'EN', 'NJ', 'EJC', 'TGV', 'IEC', 'THA', 'EUR', 'RJ', 'WB', 'CNL']);
+
+// German/foreign trips report vehicleMode 'TRAIN'; classify by product name prefix.
+function isLocal(product) {
+  const mode = product && product.vehicleMode;
+  if (mode && mode !== 'TRAIN') return LOCAL_MODES.has(mode);
+  const name = (product && product.name || '').split(/\s+/)[0].toUpperCase();
+  return !LONG_DISTANCE_PREFIXES.has(name);
+}
+
 const PLACE_CACHE = new Map();
+
+// Station name suggestions for the search box (STOP_PLACES only)
+export async function suggest(q, limit = 10) {
+  if (!q || q.trim().length < 2) return [];
+  const data = await gql(FIND_PLACE, {
+    language: 'DE',
+    placeTypes: ['STOP_PLACES'],
+    input: { value: q.trim(), type: 'NAME' },
+    limit,
+  });
+  return Array.isArray(data.places) ? data.places.map((p) => ({ id: p.id, name: p.name })) : [];
+}
 
 async function gql(query, variables) {
   const res = await fetch(GQL, {
@@ -121,43 +146,51 @@ export async function search({ from, to, when }) {
       : [];
     if (trips.length === 0) return { status: 'empty', error: 'sbb: no trips returned' };
 
-    // Prices for up to 10 trips in one call (amounts in cent, CHF)
+// Prices: only long-distance modes, always reductions NONE = full price (no Halbtax).
+    // Local modes (RB/RE/S-Bahn…) are covered by Deutschlandticket → no fare query, note instead.
     let priceMap = new Map();
-    try {
-      const priceData = await gql(TRIP_PRICES, {
-        processId: randomUUID(),
-        input: {
-          fromPlace: trips[0].summary.firstStopPlace.id,
-          toPlace: trips[0].summary.lastStopPlace.id,
-          travelClass: 'ANY_CLASS',
-          tripIds: trips.slice(0, 10).map((t) => t.id),
-          passengers: [{ reductions: ['NONE'] }],
-        },
-      });
-      for (const row of Array.isArray(priceData.tripPrices) ? priceData.tripPrices : []) {
-        const picked = Array.isArray(row.tripPrices)
-          ? (row.tripPrices.find((p) => p.travelClass === 'SECOND') || row.tripPrices[0])
-          : null;
-        if (picked && picked.price && typeof picked.price.amount === 'number') {
-          priceMap.set(row.tripId, picked.price);
+    const fareTrips = trips
+      .slice(0, 10)
+      .filter((t) => t.summary && !isLocal(t.summary.product));
+    if (fareTrips.length > 0) {
+      try {
+        const priceData = await gql(TRIP_PRICES, {
+          processId: randomUUID(),
+          input: {
+            fromPlace: trips[0].summary.firstStopPlace.id,
+            toPlace: trips[0].summary.lastStopPlace.id,
+            travelClass: 'ANY_CLASS',
+            tripIds: fareTrips.map((t) => t.id),
+            passengers: [{ reductions: ['NONE'] }],
+          },
+        });
+        for (const row of Array.isArray(priceData.tripPrices) ? priceData.tripPrices : []) {
+          const picked = Array.isArray(row.tripPrices)
+            ? (row.tripPrices.find((p) => p.travelClass === 'SECOND') || row.tripPrices[0])
+            : null;
+          if (picked && picked.price && typeof picked.price.amount === 'number') {
+            priceMap.set(row.tripId, picked.price);
+          }
         }
-      }
-    } catch { /* fares optional */ }
+      } catch { /* fares optional */ }
+    }
 
     const offers = trips.slice(0, 6).map((t) => {
       const s = t.summary;
       const product = s.product || {};
       const price = priceMap.get(t.id);
       const mode = product.vehicleMode || null;
+      const local = isLocal(product);
       return offer({
         provider: 'sbb', providerLabel: 'CH SBB',
         operator: mode ? { HIGH_SPEED_TRAIN: 'SBB', INTERCITY: 'SBB IC', INTERREGIO: 'SBB IR', REGIO: 'SBB Regio', SHIP: 'SBB Schifffahrt' }[mode] || 'SBB' : null,
         product: product.name || null,
         departure: s.departure && s.departure.time, arrival: s.arrival && s.arrival.time,
         durationMin: s.duration,
-        price: price ? price.amount / 100 : null,
+        price: local ? null : (price ? price.amount / 100 : null),
         currency: price ? price.currency : 'CHF',
-        bookedOut: !price,
+        bookedOut: !local && !price,
+        note: local ? 'im Deutschlandticket' : null,
         url: `https://www.sbb.ch/fahrplan?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`,
       });
     });

@@ -2,6 +2,7 @@ import './lib/env.js';
 import http from 'node:http';
 import { readFile } from 'node:fs/promises';
 import { runAll } from './providers/index.js';
+import * as sbb from './providers/sbb.js';
 import { cacheGet, cacheSet, appendHistory, readHistory } from './lib/store.js';
 
 const PORT = Number(process.env.FARES_PORT || 4055);
@@ -70,6 +71,16 @@ const server = http.createServer(async (req, res) => {
       const when = date ? new Date(date + 'T12:00:00Z') : new Date();
       const result = await doSearch({ from, to, when });
       return send(200, result);
+    }
+    if (u.pathname === '/api/suggest') {
+      const q = (u.searchParams.get('q') || '').trim();
+      if (q.length < 2) return send(200, { results: [] });
+      try {
+        const results = await sbb.suggest(q);
+        return send(200, { results });
+      } catch (err) {
+        return send(500, { error: err.message });
+      }
     }
     if (u.pathname === '/api/history') {
       const from = u.searchParams.get('from') || '';

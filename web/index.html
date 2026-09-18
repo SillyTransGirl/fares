@@ -21,13 +21,18 @@ th{color:#8b0000}
 .stat{display:inline-block;margin-right:12px;font-size:.85rem}
 .stat.ok{color:#6b8;}.stat.error,.stat.blocked,.stat.timeout{color:#b33}.stat.empty{color:#996}
 .hint{color:#555;font-size:.8rem;margin-top:4vh}
+.ac{position:relative;display:inline-block}
+.ac input{width:260px}
+.ac .list{position:absolute;top:100%;left:0;right:0;z-index:10;background:#151010;border:1px solid #3a2020;max-height:220px;overflow:auto;display:none}
+.ac .list div{padding:7px 10px;cursor:pointer;border-bottom:1px solid #241414;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ac .list div:hover,.ac .list div.hl{background:#2a1010;color:#ff5c5c}
 </style>
 </head>
 <body>
 <h1>fares</h1>
 <div class="grid">
-<input id="from" placeholder="from" value="Praha">
-<input id="to" placeholder="to" value="Berlin Hbf">
+<div class="ac"><input id="from" placeholder="from" value="Praha" autocomplete="off"><div class="list" data-for="from"></div></div>
+<div class="ac"><input id="to" placeholder="to" value="Berlin Hbf" autocomplete="off"><div class="list" data-for="to"></div></div>
 <input id="date" type="date">
 <button onclick="go()">search fares</button>
 </div>
@@ -37,7 +42,68 @@ th{color:#8b0000}
 <script>
 const fmt=(iso)=>{if(!iso)return'';const d=new Date(iso);return d.toLocaleString('en-GB',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'});};
 const dur=(m)=>m==null?'—':(Math.floor(m/60)+'h '+(m%60)+'m');
-const money=(o)=>o.price==null?'(quote)' : o.price.toFixed(2)+' '+o.currency;
+const money=(o)=>{
+  if(o.note) return `<span class="bad">${o.note}</span>`;
+  if(o.price==null) return '<span class="bad">no price</span>';
+  return `<b>${o.price.toFixed(2)}</b> ${o.currency}`;
+};
+
+// --- station autocomplete (SBB GraphQL places via /api/suggest) ---
+const acs=document.querySelectorAll('.ac');
+const acState=new Map();
+for(const ac of acs){
+  const input=ac.querySelector('input');
+  const list=ac.querySelector('.list');
+  const state={input,list,timer:null,items:[],hl:-1,shown:false};
+  acState.set(input.id,state);
+
+  const close=()=>{state.shown=false;state.hl=-1;list.style.display='none';};
+  const pick=(it)=>{
+    input.value=it.name;
+    input.dataset.id=it.id||'';
+    list.innerHTML='';
+    close();
+  };
+  const render=()=>{
+    list.innerHTML=state.items.map((it,i)=>{
+      const hl= i===state.hl?' hl':'';
+      const sub= it.id?'<span class="bad"> '+it.id+'</span>':'';
+      return `<div class="item${hl}" data-i="${i}">${it.name.replace(/&/g,'&amp;')}${sub}</div>`;
+    }).join('');
+    const divs=list.querySelectorAll('.item');
+    divs.forEach(d=>d.addEventListener('click',()=>pick(state.items[+d.dataset.i])));
+    list.style.display= state.items.length?'block':'none';
+    state.shown= state.items.length>0;
+  };
+  const fetch_=async()=>{
+    const q=input.value.trim();
+    if(q.length<2){close();return;}
+    try{
+      const r=await fetch('/api/suggest?q='+encodeURIComponent(q));
+      const d=await r.json();
+      state.items=(d.results||[]).slice(0,12);
+      state.hl=-1;
+      render();
+    }catch{close();}
+  };
+  input.addEventListener('input',()=>{
+    clearTimeout(state.timer);
+    state.timer=setTimeout(fetch_,180);
+  });
+  input.addEventListener('focus',()=>{ if(state.items.length) render(); });
+  input.addEventListener('keydown',(e)=>{
+    if(!state.shown) return;
+    if(e.key==='ArrowDown'){state.hl=(state.hl+1)%state.items.length;render();e.preventDefault();}
+    else if(e.key==='ArrowUp'){state.hl=(state.hl-1+state.items.length)%state.items.length;render();e.preventDefault();}
+    else if(e.key==='Enter'){ if(state.hl>=0){pick(state.items[state.hl]);e.preventDefault();} close(); }
+    else if(e.key==='Escape'){close();}
+  });
+  document.addEventListener('click',(e)=>{
+    if(!ac.contains(e.target)) close();
+  });
+}
+window.acCloseAll=()=>{acs.forEach(ac=>{const s=acState.get(ac.querySelector('input').id); if(s) s.list.style.display='none';});};
+
 async function go(){
   const from=document.getElementById('from').value.trim();
   const to=document.getElementById('to').value.trim();
