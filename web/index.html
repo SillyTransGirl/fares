@@ -23,7 +23,8 @@ button:hover{background:#2a1010}
 table{width:100%;border-collapse:collapse}
 th,td{text-align:left;padding:8px 10px;border-bottom:1px solid #241414;font-size:.95rem}
 th{color:#8b0000}
-.price{color:#ff5c5c;font-weight:900}
+.price{color:#ff5c5c;font-weight:900;text-decoration:none;cursor:pointer}
+.price:hover{text-decoration:underline}
 .bad{color:#6aa;font-size:.8rem}
 .stat{display:inline-block;margin-right:12px;font-size:.85rem}
 .stat.ok{color:#6b8;}.stat.error,.stat.blocked,.stat.timeout{color:#b33}.stat.empty{color:#996}
@@ -72,7 +73,8 @@ const money=(o)=>{
   const c=document.getElementById('cur').value;
   const val=inCur(o,c);
   const cur=(c==='orig'?o.currency:c);
-  return `<b>${fmtMoney(val)}</b> ${SYM[cur]||cur}`;
+  const inner=`<b>${fmtMoney(val)}</b> ${SYM[cur]||cur}`;
+  return o.url ? `<a class="price" href="${o.url}" target="_blank" rel="noopener noreferrer">${inner}</a>` : inner;
 };
 const render=()=>{
   const tbody=document.querySelector('#rows tbody');

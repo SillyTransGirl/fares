@@ -226,7 +226,7 @@ export async function search({ from, to, when }) {
         currency: price ? price.currency : 'CHF',
         bookedOut: !local && !price && !hasFlx,
         note,
-        url: `https://www.sbb.ch/fahrplan?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`,
+        url: `https://www.sbb.ch/fahrplan?from=${encodeURIComponent(s.firstStopPlace && s.firstStopPlace.name || from)}&to=${encodeURIComponent(s.lastStopPlace && s.lastStopPlace.name || to)}`,
       });
     });
     return { status: 'ok', offers, meta: { source: 'graphql.www.sbb.ch', note: 'prices in CHF (SBB standard fare)' } };

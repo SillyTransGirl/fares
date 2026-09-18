@@ -21,7 +21,7 @@ function isLocal(name) {
   return GERMAN_LOCAL.test(token) || GERMAN_R_4DIGIT.test(token);
 }
 
-function parseConnections(html) {
+function parseConnections(html, from, to) {
   const heads = html.split(/class="connection-head"/);
   const rows = [];
   for (const head of heads.slice(1)) {
@@ -89,7 +89,7 @@ function parseConnections(html) {
       price: null, currency: 'CZK',
       bookedOut: false,
       note,
-      url: 'https://idos.cz/vlakyautobusymhdvse/spojeni/',
+      url: `https://idos.cz/vlakyautobusymhdvse/spojeni/?From=${encodeURIComponent(from)}&To=${encodeURIComponent(to)}`,
     }));
   }
   return rows;
@@ -112,7 +112,7 @@ export async function search({ from, to, when }) {
     if (!res.ok) return { status: 'error', error: `idos http ${res.status}` };
 
     const html = await res.text();
-    const offers = parseConnections(html);
+    const offers = parseConnections(html, from, to);
     if (offers.length === 0) return { status: 'empty', error: 'idos: no connections parsed (UI changed?)' };
     return { status: 'ok', offers };
   } catch (err) {
