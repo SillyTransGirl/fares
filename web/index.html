@@ -35,6 +35,11 @@ th{color:#8b0000}
 <div class="ac"><input id="to" placeholder="to" value="Berlin Hbf" autocomplete="off"><div class="list" data-for="to"></div></div>
 <input id="date" type="date">
 <button onclick="go()">search fares</button>
+<select id="cur" title="currency" onchange="render()">
+<option value="EUR" selected>EUR (default)</option>
+<option value="CHF">CHF</option>
+<option value="orig">original</option>
+</select>
 </div>
 <div id="stats"></div>
 <table id="rows"><thead><tr><th>when</th><th>operator</th><th>train</th><th>duration</th><th>price</th><th>from → to</th></tr></thead><tbody></tbody></table>
@@ -42,10 +47,44 @@ th{color:#8b0000}
 <script>
 const fmt=(iso)=>{if(!iso)return'';const d=new Date(iso);return d.toLocaleString('en-GB',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'});};
 const dur=(m)=>m==null?'—':(Math.floor(m/60)+'h '+(m%60)+'m');
+const RATE=1.05; // 1 CHF = 1.05 EUR (mirror of server CHF_EUR_RATE)
+const fmtMoney=(v)=>v.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+const SYM={EUR:'€',CHF:'CHF',CZK:'Kč'};
+let lastOffers=[];
+// convert price+currency to the selected display currency (EUR default)
+const inCur=(o,c)=>{
+  if(o.price==null) return null;
+  if(c==='orig'||o.currency===c) return o.price;
+  if(o.currency==='CHF'&&c==='EUR') return o.price/RATE;
+  if(o.currency==='EUR'&&c==='CHF') return o.price*RATE;
+  return o.price;
+};
 const money=(o)=>{
   if(o.note) return `<span class="bad">${o.note}</span>`;
   if(o.price==null) return '<span class="bad">no price</span>';
-  return `<b>${o.price.toFixed(2)}</b> ${o.currency}`;
+  const c=document.getElementById('cur').value;
+  const val=inCur(o,c);
+  const cur=(c==='orig'?o.currency:c);
+  return `<b>${fmtMoney(val)}</b> ${SYM[cur]||cur}`;
+};
+const render=()=>{
+  const tbody=document.querySelector('#rows tbody');
+  const seen=new Set();
+  const rows=[];
+  for(const o of lastOffers){
+    const k=o.provider+'|'+(o.departure||'')+'|'+o.product;
+    if(seen.has(k)) continue;
+    seen.add(k);
+    rows.push(`<tr>
+      <td>${fmt(o.departure)}</td>
+      <td>${o.operator||'—'}</td>
+      <td>${o.product||'—'}</td>
+      <td>${dur(o.durationMin)}</td>
+      <td class="price">${money(o)}</td>
+      <td class="bad">${o.providerLabel}${o.bookedOut?' · sold out':''}</td>
+    </tr>`);
+  }
+  tbody.innerHTML=rows.join('')||'<tr><td colspan="6">no offers</td></tr>';
 };
 
 // --- station autocomplete (SBB GraphQL places via /api/suggest) ---
@@ -109,22 +148,17 @@ async function go(){
   const to=document.getElementById('to').value.trim();
   const date=document.getElementById('date').value;
   const stats=document.getElementById('stats');
-  const tbody=document.querySelector('#rows tbody');
   stats.innerHTML='searching…';
   const u='/api/search?from='+encodeURIComponent(from)+'&to='+encodeURIComponent(to)+(date?'&date='+date:'');
   try{
     const r=await (await fetch(u)).json();
     stats.innerHTML=(r.statuses||[]).map(s=>`<span class="stat ${s.status}">${s.label}: ${s.status}${s.error?' — '+s.error:''}</span>`).join('')||'no providers';
-    tbody.innerHTML=(r.offers||[]).map(o=>`<tr>
-      <td>${fmt(o.departure)}</td>
-      <td>${o.operator||'—'}</td>
-      <td>${o.product||'—'}</td>
-      <td>${dur(o.durationMin)}</td>
-      <td class="price">${money(o)}</td>
-      <td class="bad">${o.providerLabel}${o.bookedOut?' · sold out':''}</td>
-    </tr>`).join('')||'<tr><td colspan="6">no offers</td></tr>';
+    lastOffers=r.offers||[];
+    render();
   }catch(e){stats.innerHTML='error: '+e.message;}
 }
+// default date = today
+(()=>{const d=new Date();document.getElementById('date').value=d.toISOString().slice(0,10);})();
 go();
 </script>
 </body>

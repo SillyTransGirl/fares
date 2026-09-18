@@ -25,7 +25,7 @@ const TRANSPORT_MODES = [
 // Local services: covered by Deutschlandticket (and similar national flat passes) → no price query.
 const LOCAL_MODES = new Set(['REGIO', 'URBAN_TRAIN', 'TRAMWAY', 'BUS', 'SHIP', 'CABLEWAY_GONDOLA_CHAIRLIFT_FUNICULAR']);
 // Long-distance running numbers (train-class horarium, railsystem runs the whole route fare).
-const LONG_DISTANCE_PREFIXES = new Set(['ICE', 'IC', 'EC', 'EN', 'NJ', 'EJC', 'TGV', 'IEC', 'THA', 'EUR', 'RJ', 'WB', 'CNL', 'FLX']);
+const LONG_DISTANCE_PREFIXES = new Set(['ICE', 'IC', 'EC', 'EN', 'NJ', 'EJC', 'TGV', 'IEC', 'THA', 'EUR', 'RJ', 'WB', 'CNL', 'FLX', 'D']);
 
 // German/foreign trips report vehicleMode 'TRAIN'; classify by product name prefix.
 function isLocal(product) {

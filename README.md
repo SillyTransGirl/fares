@@ -37,13 +37,16 @@ and serves them on a tiny JSON API with a single-page comparison view.
 
 ## Providers
 
+Providers are queried in order **SBB → DB → ÖBB → Flix → idos**. SBB is run first
+because it reliably returns both timetable and prices for German and international routes.
+
 | Provider | Data source | Auth | Prices | Notes |
 |---|---|---|---|---|
-| **DB** (`db.js`) | [DB API Marketplace](https://developers.deutschebahn.com) — Timetables 1.0.274 (Free), RIS::Stations, RIS::Journeys 1.0.273 (Paket XS, pending) | Client ID/Secret + mTLS client cert (`DB-Client-Id`, `DB-Api-Key`) | ❌ (timetable-only) | Timetables only covers today/tomorrow; RIS::Journeys will enable +14 days once approved |
-| **ÖBB** (`oebb.js`) | [`hafas-client`](https://github.com/derhuerst/hafas-client) ÖBB profile | none | ❌ | `refreshJourney(…, { tickets: true })` returns no tickets via HAFAS; Cloudflare blocks the shop APIs |
-| **Flix** (`flix.js`) | FlixBus/FlixTrain v4 search + cities API | none | ✅ | Bus + FlixTrain; blocked from plain datacenter IPs (403) — needs residential/WARP egress |
+| **CH SBB** (`sbb.js`) | `graphql.www.sbb.ch` — Trips + TripPrices queries | none (Apollo client headers) | ✅ (CHF) | Full train chains (RE/ICE/FLX mix); D-Ticket note on all-local chains; FLX legs priced via `price_total_sum` — booking via flixtrain.de |
+| **DB** (`db.js`) | [DB API Marketplace](https://developers.deutschebahn.com) — Timetables 1.0.274 (Free), RIS::Stations | Client ID/Secret (`DB-Client-Id`, `DB-Api-Key`) | ❌ | Returns `status: empty` when no SBB mapping exists ("SBB übernimmt"); RIS::Journeys pending approval |
+| **ÖBB** (`oebb.js`) | [`hafas-client`](https://github.com/derhuerst/hafas-client) ÖBB profile | none | ❌ | Cloudflare blocks shop; HAFAS tickets endpoint returns nothing — timetable only |
+| **Flix** (`flix.js`) | FlixBus/FlixTrain mobile API (`/search/autocomplete/cities` + `/mobile/v1/trip/search.json`) | mobile auth token (public, reverse-engineered) | ✅ (EUR) | Bus + FlixTrain; works directly from server (no proxy required); fallback SOCKS5 via `fare-tunnel.service` |
 | **CD/IDOS** (`idos.js`) | `idos.cz` HTML scraping (connection form POST) | none | ❌ | Czech timetable incl. cross-border (RegioJet, ČD, ÖBB…); prices not extracted |
-| **CH SBB** (`sbb.js`) | `graphql.www.sbb.ch` (the API the sbb.ch website itself uses) | none (Apollo client headers) | ✅ | Timetable + prices in CHF (SBB standard fare); no captcha |
 
 ## Setup
 
@@ -70,7 +73,8 @@ Port defaults to `4055` (override with `FARES_PORT`).
 
 | Endpoint | Description |
 |---|---|
-| `GET /` | single-page comparison UI (`web/index.html`) |
+| `GET /` | single-page comparison UI (`web/index.html`) — currency toggle (EUR/CHF/original, EUR default), keyboard-navigable station autocomplete |
+| `GET /api/suggest?q=München` | station autocomplete (SBB places API) |
 | `GET /api/search?from=Praha&to=Berlin%20Hbf&date=2026-09-18` | run all providers for a route/date, return `{ offers, statuses }` |
 | `GET /api/history?from=…&to=…` | last scraped snapshots for a route (JSONL) |
 | `GET /api/scrape` | trigger periodic scrape of the default routes now |
@@ -82,22 +86,38 @@ Responses are cached in-memory for 15 minutes (`lib/store.js`).
 
 ```json
 {
-  "provider": "flix",
-  "providerLabel": "Flix",
-  "operator": "FlixBus",
-  "product": "FlixBus",
-  "departure": "2026-09-18T08:30:00.000Z",
-  "arrival": "2026-09-18T14:15:00.000Z",
-  "durationMin": 345,
-  "price": 19.99,
-  "currency": "EUR",
+  "provider": "sbb",
+  "providerLabel": "SBB",
+  "operator": "DB Fernverkehr",
+  "product": "ICE 623 → ICE 506",
+  "departure": "2026-09-18T08:25:00.000Z",
+  "arrival": "2026-09-18T13:03:00.000Z",
+  "durationMin": 278,
+  "price": 111.0,
+  "currency": "CHF",
   "bookedOut": false,
-  "url": "https://shop.flixbus.com/search?…"
+  "note": "im Deutschlandticket",
+  "url": "https://www.sbb.ch/…"
 }
 ```
 
 `price: null` means the provider returned a timetable entry but no fare — the
-`url` points to its booking page.
+`url` points to its booking page. `note` may contain supplementary text such as
+"im Deutschlandticket" (all-local chain, D-Ticket eligible) or "Preis via
+flixtrain.de" (SBB shows a FLX leg that must be booked elsewhere).
+
+### Currency display
+
+The frontend offers a currency toggle (EUR / CHF / original).
+EUR prices are displayed as-is; CHF prices are converted using
+`CHF_EUR_RATE` (env var, default `1.05`). The server sorts offers by
+EUR-normalized price regardless of the toggle.
+
+### Deduplication
+
+The frontend deduplicates offers by `(provider, departure, arrival, price)` so
+the same connection does not appear twice across provider-specific station
+matches (e.g. multiple SBB results departing from different Hbf sub-platforms).
 
 ## Background scrape
 
@@ -116,8 +136,10 @@ appending each result to `history/<from>→<to>.jsonl` (one JSON object per line
 - **ÖBB shop** is behind **Cloudflare**, which rejects all scripted clients.
 - **SBB** is the least protected: a public GraphQL API (`graphql.www.sbb.ch`,
   used by the sbb.ch site itself) returns both timetable and prices with just
-  a few Apollo client headers — no login, no captcha. **Flix** also works
-  (needs residential/WARP egress).
+  a few Apollo client headers — no login, no captcha. **Flix** mobile API
+  (`/mobile/v1/trip/search.json`) works from a plain server IP; a SOCKS5
+  fallback via `fare-tunnel.service` is compiled in (`PROXY_URL` env) for use
+  if Flix starts blocking datacenter IPs again.
 
 ## Deployment
 
@@ -126,6 +148,9 @@ behind a Cloudflare Tunnel:
 
 - `fare.sillytransfem.online` → `:4055` (this app)
 - `stats.sillytransfem.online` → `:9090` (metrics)
+
+A second unit, `fare-tunnel.service`, runs `tunnel.mjs` — a SOCKS5 proxy
+(`127.0.0.1:1081`) to the MaskLabs residential proxy (secrets in `.env`).
 
 ## Roadmap / known gaps
 

@@ -3,6 +3,7 @@ import * as oebb from './oebb.js';
 import * as flix from './flix.js';
 import * as idos from './idos.js';
 import * as sbb from './sbb.js';
+import { chfToEur } from '../lib/currency.js';
 
 export const PROVIDERS = [
   // SBB first: works reliably, resolves stations via its own GraphQL places API.
@@ -28,10 +29,16 @@ export async function runAll(params, timeoutMs = 30000) {
     const r = byProvider.get(p.key) || { status: 'error', error: 'provider failed' };
     if (r.status === 'ok' && Array.isArray(r.offers)) offers.push(...r.offers);
   }
-  offers.sort((a, b) => (a.price ?? Infinity) - (b.price ?? Infinity));
+  offers.sort((a, b) => toEur(a.price, a.currency) - toEur(b.price, b.currency));
   const statuses = results.map((r) => {
     const v = r.status === 'fulfilled' ? r.value : { key: '?', label: '?', result: { status: 'error' } };
     return { key: v.key, label: v.label, status: v.result.status, error: v.result.error || null, offerCount: (v.result.offers || []).length };
   });
   return { offers, statuses };
+}
+
+// Mixed providers use different currencies (SBB=CHF, Flix=EUR). Normalize to EUR for a fair sort.
+function toEur(price, currency) {
+  if (typeof price !== 'number') return Infinity;
+  return currency === 'EUR' ? price : chfToEur(price);
 }
