@@ -25,7 +25,7 @@ const TRANSPORT_MODES = [
 // Local services: covered by Deutschlandticket (and similar national flat passes) → no price query.
 const LOCAL_MODES = new Set(['REGIO', 'URBAN_TRAIN', 'TRAMWAY', 'BUS', 'SHIP', 'CABLEWAY_GONDOLA_CHAIRLIFT_FUNICULAR']);
 // Long-distance running numbers (train-class horarium, railsystem runs the whole route fare).
-const LONG_DISTANCE_PREFIXES = new Set(['ICE', 'IC', 'EC', 'EN', 'NJ', 'EJC', 'TGV', 'IEC', 'THA', 'EUR', 'RJ', 'WB', 'CNL']);
+const LONG_DISTANCE_PREFIXES = new Set(['ICE', 'IC', 'EC', 'EN', 'NJ', 'EJC', 'TGV', 'IEC', 'THA', 'EUR', 'RJ', 'WB', 'CNL', 'FLX']);
 
 // German/foreign trips report vehicleMode 'TRAIN'; classify by product name prefix.
 function isLocal(product) {
@@ -104,9 +104,34 @@ const TRIPS = `query Trips($input: TripInput!, $language: LanguageEnum!) {
         direction
         international
       }
+      legs {
+        duration
+        __typename
+        ... on PTRideLeg {
+          start { id name }
+          end { id name }
+          departure { time delay }
+          arrival { time delay }
+          serviceJourney {
+            direction
+            serviceProducts { name line number vehicleMode }
+          }
+        }
+      }
     }
   }
 }`;
+
+// Extract the ordered train chain per trip (PTRideLeg serviceProducts).
+function tripServices(t) {
+  const rides = [];
+  for (const leg of Array.isArray(t.legs) ? t.legs : []) {
+    if (leg.__typename !== 'PTRideLeg') continue;
+    const sp = leg.serviceJourney && leg.serviceJourney.serviceProducts;
+    if (Array.isArray(sp)) for (const p of sp) if (p) rides.push(p);
+  }
+  return rides;
+}
 
 const TRIP_PRICES = `query TripPrices($processId: ID!, $input: TripPricesQueryInput!) {
   tripPrices(processId: $processId, input: $input) {
@@ -151,7 +176,7 @@ export async function search({ from, to, when }) {
     let priceMap = new Map();
     const fareTrips = trips
       .slice(0, 10)
-      .filter((t) => t.summary && !isLocal(t.summary.product));
+      .filter((t) => tripServices(t).some((p) => !isLocal(p)));
     if (fareTrips.length > 0) {
       try {
         const priceData = await gql(TRIP_PRICES, {
@@ -179,18 +204,28 @@ export async function search({ from, to, when }) {
       const s = t.summary;
       const product = s.product || {};
       const price = priceMap.get(t.id);
-      const mode = product.vehicleMode || null;
-      const local = isLocal(product);
+      const services = tripServices(t);
+      const modes = services.map((p) => p.vehicleMode).filter(Boolean);
+      const mode = modes[0] || product.vehicleMode || null;
+      // D-Ticket ONLY if every ride of the chain is local (all-legs check).
+      const local = services.length > 0 && services.every((p) => isLocal(p));
+      const productName = services.length > 0 ? services.map((p) => p.name).join(' → ') : (product.name || null);
+      // Long-distance fare shown (full price, reductions NONE = no Halbtax) when any leg is long-distance.
+      const fare = !local && price ? price.amount / 100 : null;
+      const hasFlx = services.some((p) => (p.name || '').startsWith('FLX '));
+      let note = null;
+      if (local) note = 'im Deutschlandticket';
+      else if (hasFlx && !price) note = 'Preis via flixtrain.de (nicht über SBB buchbar)';
       return offer({
         provider: 'sbb', providerLabel: 'CH SBB',
         operator: mode ? { HIGH_SPEED_TRAIN: 'SBB', INTERCITY: 'SBB IC', INTERREGIO: 'SBB IR', REGIO: 'SBB Regio', SHIP: 'SBB Schifffahrt' }[mode] || 'SBB' : null,
-        product: product.name || null,
+        product: productName,
         departure: s.departure && s.departure.time, arrival: s.arrival && s.arrival.time,
         durationMin: s.duration,
-        price: local ? null : (price ? price.amount / 100 : null),
+        price: fare,
         currency: price ? price.currency : 'CHF',
-        bookedOut: !local && !price,
-        note: local ? 'im Deutschlandticket' : null,
+        bookedOut: !local && !price && !hasFlx,
+        note,
         url: `https://www.sbb.ch/fahrplan?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`,
       });
     });
