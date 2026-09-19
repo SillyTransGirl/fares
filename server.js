@@ -150,6 +150,36 @@ const server = http.createServer(async (req, res) => {
         });
       });
     }
+    if (u.pathname === '/api/deals') {
+      // Bang for your buck: cheap trips for tomorrow + day after
+      const DEAL_ORIGINS = ['Frankfurt Hbf', 'Stuttgart Hbf', 'München Hbf', 'Köln Hbf', 'Hamburg Hbf', 'Berlin Hbf'];
+      const DEAL_DESTS = ['Praha', 'Wien Hbf', 'Zürich HB', 'Amsterdam', 'Paris', 'Venezia', 'Split', 'Budapest Keleti', 'Salzburg Hbf', 'Ljubljana'];
+      const tomorrow = new Date(Date.now() + 86400000);
+      const dayAfter = new Date(Date.now() + 2 * 86400000);
+      const dates = [tomorrow, dayAfter];
+      const allDeals = [];
+      // Pick 3 random origins × 3 random destinations × 2 dates = 18 searches max
+      const origins = DEAL_ORIGINS.sort(() => Math.random() - 0.5).slice(0, 3);
+      const dests = DEAL_DESTS.sort(() => Math.random() - 0.5).slice(0, 3);
+      const searches = [];
+      for (const d of dates) {
+        const dateStr = d.toISOString().slice(0, 10);
+        for (const from of origins) {
+          for (const to of dests) {
+            searches.push(doSearch({ from, to, when: new Date(dateStr + 'T12:00:00Z') }, true).then(r => {
+              const cheap = (r.offers || []).filter(o => typeof o.price === 'number').slice(0, 2);
+              return cheap.map(o => ({ ...o, dealDate: dateStr, dealFrom: from, dealTo: to }));
+            }).catch(() => []));
+          }
+        }
+      }
+      const results = await Promise.allSettled(searches);
+      for (const r of results) {
+        if (r.status === 'fulfilled') allDeals.push(...r.value);
+      }
+      allDeals.sort((a, b) => (a.price || Infinity) - (b.price || Infinity));
+      return send(200, { deals: allDeals.slice(0, 12) });
+    }
     if (u.pathname === '/api/suggest') {
       const q = (u.searchParams.get('q') || '').trim();
       if (q.length < 2) return send(200, { results: [] });

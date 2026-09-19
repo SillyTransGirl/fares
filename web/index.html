@@ -34,6 +34,18 @@ th{color:#8b0000}
 .ac .list{position:absolute;top:100%;left:0;right:0;z-index:10;background:#151010;border:1px solid #3a2020;max-height:220px;overflow:auto;display:none}
 .ac .list div{padding:7px 10px;cursor:pointer;border-bottom:1px solid #241414;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .ac .list div:hover,.ac .list div.hl{background:#2a1010;color:#ff5c5c}
+.deals{margin-top:5vh;border-top:1px solid #241414;padding-top:3vh}
+.deals h2{color:#8b0000;font-size:1.4rem;margin-bottom:2vh}
+.deals-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:10px}
+.deal-card{background:#151010;border:1px solid #3a2020;padding:12px;border-radius:4px}
+.deal-card .route{color:#c9c9c9;font-size:.95rem;margin-bottom:6px}
+.deal-card .route .arrow{color:#8b0000}
+.deal-card .meta{color:#666;font-size:.8rem}
+.deal-card .deal-price{color:#ff5c5c;font-weight:900;font-size:1.1rem;margin-top:6px}
+.deal-card .deal-price a{color:#ff5c5c;text-decoration:none}
+.deal-card .deal-price a:hover{text-decoration:underline}
+.deal-card .deal-date{color:#555;font-size:.75rem}
+.deals-loading{color:#555;font-size:.9rem}
 </style>
 </head>
 <body>
@@ -52,6 +64,11 @@ th{color:#8b0000}
 <div id="stats"></div>
 <table id="rows"><thead><tr><th>when</th><th>operator</th><th>train</th><th>duration</th><th>price</th><th>from → to</th></tr></thead><tbody></tbody></table>
 <p class="hint" id="hint"></p>
+<div class="deals" id="deals">
+<h2>bang for your buck</h2>
+<p class="deals-loading" id="deals-loading">loading cheap trips for tomorrow...</p>
+<div class="deals-grid" id="deals-grid"></div>
+</div>
 <script>
 const fmt=(iso)=>{if(!iso)return'';const d=new Date(iso);return d.toLocaleString('en-GB',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'});};
 const dur=(m)=>m==null?'—':(Math.floor(m/60)+'h '+(m%60)+'m');
@@ -180,6 +197,28 @@ async function go(){
   }
 })();
 go();
+// Load deals
+(async()=>{
+  try{
+    const r=await fetch('/api/deals');
+    const d=await r.json();
+    const grid=document.getElementById('deals-grid');
+    const loading=document.getElementById('deals-loading');
+    const deals=d.deals||[];
+    if(!deals.length){loading.textContent='no cheap trips found';return;}
+    loading.style.display='none';
+    grid.innerHTML=deals.map(o=>{
+      const price=o.price!=null?`<span class="deal-price"><a href="${o.url||'#'}" target="_blank" rel="noopener">${fmtMoney(inCur(o,'EUR'))} €</a></span>`:'<span class="deal-price bad">no price</span>';
+      const dep=o.departure?fmt(o.departure):'';
+      return `<div class="deal-card">
+        <div class="route">${o.dealFrom||'?'} <span class="arrow">→</span> ${o.dealTo||'?'}</div>
+        <div class="meta">${o.product||''} · ${o.providerLabel||''}</div>
+        ${price}
+        <div class="deal-date">${o.dealDate||''} ${dep}</div>
+      </div>`;
+    }).join('');
+  }catch{document.getElementById('deals-loading').textContent='failed to load deals';}
+})();
 </script>
 </body>
 </html>
