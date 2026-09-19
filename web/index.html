@@ -23,6 +23,7 @@ button:hover{background:#2a1010}
 table{width:100%;border-collapse:collapse}
 th,td{text-align:left;padding:8px 10px;border-bottom:1px solid #241414;font-size:.95rem}
 th{color:#8b0000}
+td svg{vertical-align:middle}
 .price{color:#ff5c5c;font-weight:900;text-decoration:none;cursor:pointer}
 .price:hover{text-decoration:underline}
 .bad{color:#6aa;font-size:.8rem}
@@ -41,7 +42,8 @@ th{color:#8b0000}
 .deal-card{background:#151010;border:1px solid #3a2020;padding:12px;border-radius:4px}
 .deal-card .route{color:#c9c9c9;font-size:.95rem;margin-bottom:6px}
 .deal-card .route .arrow{color:#8b0000}
-.deal-card .meta{color:#666;font-size:.8rem}
+.deal-card .meta{color:#666;font-size:.8rem;display:flex;align-items:center;gap:6px}
+.deal-card .meta svg{width:24px;height:12px}
 .deal-card .deal-price{color:#ff5c5c;font-weight:900;font-size:1.1rem;margin-top:6px}
 .deal-card .deal-price a{color:#ff5c5c;text-decoration:none}
 .deal-card .deal-price a:hover{text-decoration:underline}
@@ -63,7 +65,7 @@ th{color:#8b0000}
 </select>
 </div>
 <div id="stats"></div>
-<table id="rows"><thead><tr><th>when</th><th>operator</th><th>train</th><th>duration</th><th>price</th><th>from → to</th></tr></thead><tbody></tbody></table>
+<table id="rows"><thead><tr><th>when</th><th>line</th><th>train</th><th>duration</th><th>price</th><th>provider</th></tr></thead><tbody></tbody></table>
 <p class="hint" id="hint"></p>
 <div class="deals" id="deals">
 <h2>bang for your buck</h2>
@@ -94,6 +96,15 @@ const money=(o)=>{
   const inner=`<b>${fmtMoney(val)}</b> ${SYM[cur]||cur}`;
   return o.url ? `<a class="price" href="${o.url}" target="_blank" rel="noopener noreferrer">${inner}</a>` : inner;
 };
+const LOGO={
+DB:'<svg viewBox="0 0 32 16" width="28" height="14"><rect width="32" height="16" rx="2" fill="#c1002a"/><text x="16" y="12.5" text-anchor="middle" font-size="11" font-weight="900" font-family="Arial,sans-serif" fill="#fff">DB</text></svg>',
+Flix:'<svg viewBox="0 0 32 16" width="28" height="14"><rect width="32" height="16" rx="2" fill="#73d700"/><text x="16" y="12" text-anchor="middle" font-size="9" font-weight="900" font-family="Arial,sans-serif" fill="#1a1a1a">Flix</text></svg>',
+SBB:'<svg viewBox="0 0 32 16" width="28" height="14"><rect width="32" height="16" rx="2" fill="#c1002a"/><text x="16" y="12" text-anchor="middle" font-size="9" font-weight="900" font-family="Arial,sans-serif" fill="#fff">SBB</text></svg>',
+LEO:'<svg viewBox="0 0 32 16" width="28" height="14"><rect width="32" height="16" rx="2" fill="#00a651"/><text x="16" y="12" text-anchor="middle" font-size="9" font-weight="900" font-family="Arial,sans-serif" fill="#fff">LEO</text></svg>',
+CD:'<svg viewBox="0 0 32 16" width="28" height="14"><rect width="32" height="16" rx="2" fill="#004494"/><text x="16" y="12" text-anchor="middle" font-size="9" font-weight="900" font-family="Arial,sans-serif" fill="#fff">CD</text></svg>',
+'IDOS':'<svg viewBox="0 0 32 16" width="28" height="14"><rect width="32" height="16" rx="2" fill="#e8451a"/><text x="16" y="12" text-anchor="middle" font-size="8" font-weight="900" font-family="Arial,sans-serif" fill="#fff">IDOS</text></svg>'
+};
+const logoFor=(p)=>LOGO[p]||`<span style="color:#8b0000;font-weight:700;font-size:.85rem">${p||'?'}</span>`;
 const render=()=>{
   const tbody=document.querySelector('#rows tbody');
   const seen=new Set();
@@ -104,7 +115,7 @@ const render=()=>{
     seen.add(k);
     rows.push(`<tr>
       <td>${fmt(o.departure)}</td>
-      <td>${o.operator||'—'}</td>
+      <td>${logoFor(o.provider)}</td>
       <td>${o.product||'—'}</td>
       <td>${dur(o.durationMin)}</td>
       <td class="price">${money(o)}</td>
@@ -213,7 +224,7 @@ go();
       const dep=o.departure?fmt(o.departure):'';
       return `<div class="deal-card">
         <div class="route">${o.dealFrom||'?'} <span class="arrow">→</span> ${o.dealTo||'?'}</div>
-        <div class="meta">${o.product||''} · ${o.providerLabel||''}</div>
+        <div class="meta">${o.product||''} · ${logoFor(o.provider)} ${o.providerLabel||''}</div>
         ${price}
         <div class="deal-date">${o.dealDate||''} ${dep}</div>
       </div>`;
