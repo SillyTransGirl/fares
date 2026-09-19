@@ -159,10 +159,15 @@ async function tryVendoFares(fromStation, toStation, whenDate, age, bahncard) {
   });
 }
 
-function parseVendoOffers(vendoOffers) {
+function parseVendoOffers(vendoOffers, fromStation, toStation, whenDate) {
   const offers = [];
+  const pad = n => String(n).padStart(2, '0');
+  const dateStr = `${whenDate.getFullYear()}-${pad(whenDate.getMonth()+1)}-${pad(whenDate.getDate())}`;
   for (const o of vendoOffers.slice(0, 8)) {
     const product = o.product || 'DB';
+    const from = encodeURIComponent(fromStation);
+    const to = encodeURIComponent(toStation);
+    const url = `https://www.bahn.de/buchung/fahrplan/suche#sts=true&so=${from}&zo=${to}&kl=2&r=13:16:KLASSENLOS:1&hd=${dateStr}T${pad(whenDate.getHours())}:${pad(whenDate.getMinutes())}:00&start=1`;
     offers.push(offer({
       provider: 'db', providerLabel: 'DB',
       operator: product.startsWith('ICE') || product.startsWith('EC') || product.startsWith('IC') ? 'Deutsche Bahn' : product,
@@ -171,7 +176,7 @@ function parseVendoOffers(vendoOffers) {
       price: typeof o.price === 'number' ? o.price : null,
       currency: o.currency || 'EUR',
       fareType: 'Flexpreis',
-      url: `https://www.bahn.de/buchung/fahrplan/suche`,
+      url: url,
     }));
   }
   return offers;
@@ -233,7 +238,7 @@ export async function search({ from, to, when, sparpreis, age, bahncard }) {
   // No EVA resolution needed for Vendo (it resolves names automatically)
   const vf = await tryVendoFares(from, to, whenDate, age, bahncard);
   if (vf.offers && vf.offers.length > 0) {
-    const offers = parseVendoOffers(vf.offers);
+    const offers = parseVendoOffers(vf.offers, from, to, whenDate);
     if (offers.length > 0) {
       return { status: 'ok', offers, meta: { source: 'vendo-mob', note: sparpreis ? 'Sparpreis (vendo)' : 'Flexpreis (vendo)' } };
     }

@@ -1,6 +1,7 @@
 import * as db from './db.js';
 import * as flix from './flix.js';
 import * as idos from './idos.js';
+import * as leo from './leo.js';
 import * as sbb from './sbb.js';
 import { chfToEur } from '../lib/currency.js';
 
@@ -9,6 +10,7 @@ export const PROVIDERS = [
   { key: 'sbb', label: 'CH SBB', run: sbb.search },
   { key: 'db', label: 'DB', run: db.search },
   { key: 'flix', label: 'Flix', run: flix.search },
+  { key: 'leo', label: 'LEO', run: leo.search },
   { key: 'idos', label: 'CD/IDOS', run: idos.search },
 ];
 
