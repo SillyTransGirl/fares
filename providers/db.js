@@ -163,15 +163,15 @@ function parseVendoOffers(vendoOffers, fromStation, toStation, whenDate) {
   const offers = [];
   const pad = n => String(n).padStart(2, '0');
   const dateStr = `${whenDate.getFullYear()}-${pad(whenDate.getMonth()+1)}-${pad(whenDate.getDate())}`;
+  const hd = `${dateStr}T${pad(whenDate.getHours())}:${pad(whenDate.getMinutes())}:00`;
   for (const o of vendoOffers.slice(0, 8)) {
     const product = o.product || 'DB';
-    const from = encodeURIComponent(fromStation);
-    const to = encodeURIComponent(toStation);
     const fromEva = EVA_MAP.get(fromStation.toLowerCase()) || '';
     const toEva = EVA_MAP.get(toStation.toLowerCase()) || '';
-    const soid = fromEva ? `A%3D1%40O%3D${from}%40L%3D${fromEva}%40` : `O%3D${from}`;
-    const zoid = toEva ? `A%3D1%40O%3D${to}%40L%3D${toEva}%40` : `O%3D${to}`;
-    const url = `https://www.bahn.de/buchung/fahrplan/suche#sts=true&so=${from}&zo=${to}&soid=${soid}&zoid=${zoid}&kl=2&hd=${dateStr}T${pad(whenDate.getHours())}:${pad(whenDate.getMinutes())}:00&hza=D&ar=false&s=false&d=false&hz=%5B%5D&fm=false&bp=false`;
+    const soid = fromEva ? `A%3D1%40O%3D${encodeURIComponent(fromStation)}%40L%3D${fromEva}%40` : `O%3D${encodeURIComponent(fromStation)}`;
+    const zoid = toEva ? `A%3D1%40O%3D${encodeURIComponent(toStation)}%40L%3D${toEva}%40` : `O%3D${encodeURIComponent(toStation)}`;
+    const bahnHash = `sts=true&so=${encodeURIComponent(fromStation)}&zo=${encodeURIComponent(toStation)}&soid=${soid}&zoid=${zoid}&kl=2&hd=${hd}&hza=D&ar=false&s=false&d=false&hz=%5B%5D&fm=false&bp=false`;
+    const url = `https://www.bahn.de/buchung/fahrplan/suche#${bahnHash}`;
     offers.push(offer({
       provider: 'db', providerLabel: 'DB',
       operator: product.startsWith('ICE') || product.startsWith('EC') || product.startsWith('IC') ? 'Deutsche Bahn' : product,

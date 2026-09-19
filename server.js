@@ -201,6 +201,23 @@ const server = http.createServer(async (req, res) => {
       return send(200, { ok: true });
     }
     if (u.pathname === '/health') return send(200, { ok: true, ua: UA });
+    if (u.pathname === '/go') {
+      const from = u.searchParams.get('from') || '';
+      const to = u.searchParams.get('to') || '';
+      const soid = u.searchParams.get('soid') || '';
+      const zoid = u.searchParams.get('zoid') || '';
+      const hd = u.searchParams.get('hd') || '';
+      const bahnUrl = `https://www.bahn.de/buchung/fahrplan/suche#sts=true&so=${encodeURIComponent(from)}&zo=${encodeURIComponent(to)}&soid=${soid}&zoid=${zoid}&kl=2&hd=${hd}&hza=D&ar=false&s=false&d=false&hz=%5B%5D&fm=false&bp=false`;
+      const html = `<!doctype html><html><head><meta charset="utf-8"><title>Redirecting to bahn.de...</title>
+<script>
+window.location.replace(${JSON.stringify(bahnUrl)});
+</script></head><body style="margin:0;background:#0a0505;color:#c9c9c9;font-family:monospace;display:flex;align-items:center;justify-content:center;height:100vh">
+<p>Opening <a href="${bahnUrl}" style="color:#ff5c5c">bahn.de</a>...</p>
+</body></html>`;
+      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+      res.end(html);
+      return;
+    }
     return send(404, { error: 'not found' });
   } catch (err) {
     return send(500, { error: err.message });
