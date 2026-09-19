@@ -167,7 +167,9 @@ function parseVendoOffers(vendoOffers, fromStation, toStation, whenDate) {
     const product = o.product || 'DB';
     const from = encodeURIComponent(fromStation);
     const to = encodeURIComponent(toStation);
-    const url = `https://www.bahn.de/buchung/fahrplan/suche#sts=true&so=${from}&zo=${to}&kl=2&hd=${dateStr}T${pad(whenDate.getHours())}:${pad(whenDate.getMinutes())}:00&start=1`;
+    const soid = encodeURIComponent(`O=${fromStation}`);
+    const zoid = encodeURIComponent(`O=${toStation}`);
+    const url = `https://www.bahn.de/buchung/fahrplan/suche#sts=true&so=${from}&zo=${to}&soid=${soid}&zoid=${zoid}&kl=2&hd=${dateStr}T${pad(whenDate.getHours())}:${pad(whenDate.getMinutes())}:00&hza=D&ar=false&s=false&d=false&hz=%5B%5D&fm=false&bp=false`;
     offers.push(offer({
       provider: 'db', providerLabel: 'DB',
       operator: product.startsWith('ICE') || product.startsWith('EC') || product.startsWith('IC') ? 'Deutsche Bahn' : product,
