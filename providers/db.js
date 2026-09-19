@@ -62,7 +62,7 @@ function baseHeaders(accept = 'application/json') {
   };
 }
 
-async function resolve(name) {
+export async function resolve(name) {
   const key = name.trim().toLowerCase();
   if (EVA_MAP.has(key)) return EVA_MAP.get(key);
   // Try RIS::Stations if subscribed (Testzugang)

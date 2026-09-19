@@ -1,6 +1,7 @@
 import './lib/env.js';
 import http from 'node:http';
 import { readFile } from 'node:fs/promises';
+import { execFile } from 'node:child_process';
 import { runAll } from './providers/index.js';
 import * as sbb from './providers/sbb.js';
 import { cacheGet, cacheSet, appendHistory, readHistory } from './lib/store.js';
@@ -119,6 +120,35 @@ const server = http.createServer(async (req, res) => {
       const when = date ? new Date(date + 'T12:00:00Z') : new Date();
       const result = await doSearch({ from, to, when, sparpreis, age, bahncard });
       return send(200, result);
+    }
+    if (u.pathname === '/api/split') {
+      const from = (u.searchParams.get('from') || '').trim();
+      const to = (u.searchParams.get('to') || '').trim();
+      const date = u.searchParams.get('date');
+      const maxSplits = parseInt(u.searchParams.get('maxSplits')) || 5;
+      if (!from || !to) return send(400, { error: 'from and to are required' });
+      // Resolve EVA IDs using db provider
+      const db = await import('./providers/db.js');
+      const fromEva = await db.resolve(from);
+      const toEva = await db.resolve(to);
+      if (!fromEva || !toEva) return send(400, { error: `no EVA for ${from}(${fromEva||'?'})/${to}(${toEva||'?'})` });
+      const dateStr = date || new Date().toISOString().slice(0, 10);
+      const pyScript = '/opt/fares/scrapy_fares/vendo_split.py';
+      const args = [pyScript, '--from-eva', fromEva, '--to-eva', toEva, '--date', dateStr, '--max-splits', String(maxSplits)];
+      const venvPy = '/opt/fares/scrapy_fares/.venv/bin/python3';
+      return new Promise((resolve) => {
+        execFile(venvPy, args, { timeout: 120000, maxBuffer: 5 * 1024 * 1024 }, (err, stdout) => {
+          if (err) { res.writeHead(500); res.end(JSON.stringify({ error: err.message?.slice(0, 200) })); return resolve(); }
+          try {
+            const result = JSON.parse(stdout || '{}');
+            res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+            res.end(JSON.stringify(result));
+            resolve();
+          } catch (e) {
+            res.writeHead(500); res.end(JSON.stringify({ error: 'parse error' })); resolve();
+          }
+        });
+      });
     }
     if (u.pathname === '/api/suggest') {
       const q = (u.searchParams.get('q') || '').trim();
