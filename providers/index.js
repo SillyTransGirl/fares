@@ -2,15 +2,18 @@ import * as db from './db.js';
 import * as flix from './flix.js';
 import * as idos from './idos.js';
 import * as leo from './leo.js';
+import * as oebb from './oebb.js';
 import * as sbb from './sbb.js';
+import * as sncf from './sncf.js';
 import { chfToEur } from '../lib/currency.js';
 
 export const PROVIDERS = [
-  // SBB first: works reliably, resolves stations via its own GraphQL places API.
   { key: 'sbb', label: 'CH SBB', run: sbb.search },
   { key: 'db', label: 'DB', run: db.search },
   { key: 'flix', label: 'Flix', run: flix.search },
   { key: 'leo', label: 'LEO', run: leo.search },
+  { key: 'oebb', label: 'ÖBB', run: oebb.search },
+  { key: 'sncf', label: 'SNCF', run: sncf.search },
   { key: 'idos', label: 'CD/IDOS', run: idos.search },
 ];
 
