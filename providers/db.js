@@ -135,36 +135,44 @@ function resolveTraveller(age, bahncard) {
 // Node.js JA3 → blocked pool; curl JA3 → residential pool.
 // 2-step: fahrplan → ctxRecon → recon (delivers reiseAngebote with Sparpreis/Flexpreis)
 async function tryWebFares(fromExtId, toExtId, whenDate, sparpreis = false, age, bahncard) {
-  if (!OXY.user || !OXY.pass) return { skipped: 'oxylabs not configured' };
+  // SOCKS5 tunnel (port 1081) is always running; Oxylabs is optional fallback
   const pad = n => String(n).padStart(2, '0');
   const date = `${whenDate.getFullYear()}-${pad(whenDate.getMonth()+1)}-${pad(whenDate.getDate())}`;
   const time = `${pad(whenDate.getHours())}:${pad(whenDate.getMinutes())}:00`;
   const traveller = resolveTraveller(age, bahncard);
-  const proxy = `http://${OXY.user}:${OXY.pass}@unblock.oxylabs.io:60000`;
+
+  // Proxy strategy: SOCKS5 tunnel (home PC or masklabs) → Oxylabs HTTP fallback
+  const SOCKS5_PROXY = '127.0.0.1:1081';
+  const OXY_PROXY = `http://${OXY.user}:${OXY.pass}@unblock.oxylabs.io:60000`;
 
   function curlPost(url, body, timeoutSec = 60) {
     const tmpFile = `/tmp/_oxy_${Date.now()}_${Math.random().toString(36).slice(2)}.json`;
     try {
       fs.writeFileSync(tmpFile, JSON.stringify(body));
-      return new Promise((resolve, reject) => {
-        execFile('curl', [
-          '-sk', '-x', proxy, '-X', 'POST',
-          '-H', 'Content-Type: application/json; charset=UTF-8',
-          '-H', 'Accept: application/json',
-          '-H', 'X-Oxylabs-Geo-Location: Germany',
-          '-H', 'x-oxylabs-force-headers: 1',
-          '-H', 'User-Agent: Mozilla/5.0',
-          '-H', 'Origin: https://www.bahn.de',
-          '-H', 'Referer: https://www.bahn.de/buchung/fahrplan/suche',
-          '--max-time', String(timeoutSec),
-          '-d', `@${tmpFile}`,
-          url,
-        ], { timeout: (timeoutSec + 5) * 1000, maxBuffer: 10 * 1024 * 1024 }, (err, stdout) => {
-          try { fs.unlinkSync(tmpFile); } catch {}
-          resolve(err ? '' : (stdout || ''));
-        });
-      });
+      return tryWithProxy(url, tmpFile, timeoutSec, SOCKS5_PROXY, true)
+        .then(r => r || tryWithProxy(url, tmpFile, timeoutSec, OXY_PROXY, false))
+        .finally(() => { try { fs.unlinkSync(tmpFile); } catch {} });
     } catch { return Promise.resolve(''); }
+  }
+
+  function tryWithProxy(url, tmpFile, timeoutSec, proxy, isSocks) {
+    const args = ['-sk', '-X', 'POST',
+      '-H', 'Content-Type: application/json; charset=UTF-8',
+      '-H', 'Accept: application/json',
+      '-H', 'X-Oxylabs-Geo-Location: Germany',
+      '-H', 'x-oxylabs-force-headers: 1',
+      '-H', 'User-Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36',
+      '-H', 'Origin: https://www.bahn.de',
+      '-H', 'Referer: https://www.bahn.de/buchung/fahrplan/suche',
+      '--max-time', String(timeoutSec),
+      '-d', `@${tmpFile}`, url];
+    if (isSocks) args.splice(1, 0, '--socks5-hostname', proxy);
+    else args.splice(1, 0, '-x', proxy);
+    return new Promise((resolve) => {
+      execFile('curl', args, { timeout: (timeoutSec + 5) * 1000, maxBuffer: 10 * 1024 * 1024 }, (err, stdout) => {
+        resolve(err ? '' : (stdout || ''));
+      });
+    });
   }
 
   function parseJson(stdout) {
