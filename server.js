@@ -64,6 +64,16 @@ const server = http.createServer(async (req, res) => {
   };
 
   try {
+    if (u.pathname.startsWith('/logos/')) {
+      const file = u.pathname.replace('/logos/', '');
+      const ext = file.split('.').pop();
+      const types = { png: 'image/png', svg: 'image/svg+xml', jpg: 'image/jpeg' };
+      try {
+        const data = await readFile(new URL(`./web/logos/${file}`, import.meta.url));
+        res.writeHead(200, { 'Content-Type': types[ext] || 'application/octet-stream', 'Cache-Control': 'public, max-age=86400' });
+        return res.end(data);
+      } catch { return send(404, { error: 'not found' }); }
+    }
     if (u.pathname === '/' || u.pathname === '/index.html') {
       let html = await readFile(new URL('./web/index.html', import.meta.url), 'utf8');
       const from = (u.searchParams.get('from') || '').trim();

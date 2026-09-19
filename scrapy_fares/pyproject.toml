@@ -1,0 +1,22 @@
+[project]
+name = "scrapy-fares"
+version = "0.1.0"
+description = "Add your description here"
+authors = [
+    { name = "SillyTransGirl", email = "315052621+SillyTransGirl@users.noreply.github.com" }
+]
+requires-python = ">=3.11"
+dependencies = [
+    "curl-cffi>=0.16.3",
+    "python-dotenv>=1.2.3",
+    "requests>=2.34.2",
+    "scrapy>=2.19.0",
+    "scrapy-playwright>=0.0.48",
+]
+
+[project.scripts]
+scrapy-fares = "scrapy_fares:main"
+
+[build-system]
+requires = ["uv_build>=0.12.17,<0.13.0"]
+build-backend = "uv_build"
