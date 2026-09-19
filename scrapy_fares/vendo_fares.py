@@ -39,6 +39,7 @@ EVA_LOC = {
     "8000199": "A=1@O=Kiel Hbf@X=10131976@Y=54314982@U=80@L=8000199@",
     "8070003": "A=1@O=Frankfurt(Main)Flughafen Fernbf@X=8670068@Y=50050282@U=80@L=8070003@",
     "8011113": "A=1@O=Berlin Sudkreuz@X=13440829@Y=52476911@U=80@L=8011113@",
+    "8000010": "A=1@O=Aschaffenburg Hbf@X=9140213@Y=49979508@U=80@L=8000010@",
     "8103000": "A=1@O=Wien Hbf@X=163708860@Y=48184790@U=80@L=8103000@",
     "5400001": "A=1@O=Praha hl.n.@X=14423027@Y=50085783@U=80@L=5400001@",
     "8503000": "A=1@O=Zuerich HB@X=8565247@Y=47378543@U=80@L=8503000@",
@@ -64,6 +65,15 @@ def make_headers(media):
     }
 
 
+def resolve_loc(station):
+    """Resolve station to Vendo location ID. Accepts EVA code or name."""
+    if station in EVA_LOC:
+        return EVA_LOC[station]
+    if station.isdigit():
+        return f"A=1@L={station}@"
+    # Name-based search: Vendo resolves it automatically
+    return f"A=1@O={station}@"
+
 def build_traveller(age=None, bahncard=None):
     typ = "ERWACHSENER"
     if age is not None:
@@ -81,9 +91,9 @@ def build_traveller(age=None, bahncard=None):
     return [{"reisendenTyp": typ, "ermaessigungen": [erm]}]
 
 
-def search_fares(from_eva, to_eva, date_str, time_str="10:00:00", age=None, bahncard=None):
-    from_loc = EVA_LOC.get(from_eva, f"A=1@L={from_eva}@")
-    to_loc = EVA_LOC.get(to_eva, f"A=1@L={to_eva}@")
+def search_fares(from_station, to_station, date_str, time_str="10:00:00", age=None, bahncard=None):
+    from_loc = resolve_loc(from_station)
+    to_loc = resolve_loc(to_station)
     reiseDatum = datetime.strptime(f"{date_str}T{time_str}", "%Y-%m-%dT%H:%M:%S").replace(tzinfo=timezone.utc).isoformat()
 
     payload = {
@@ -169,15 +179,23 @@ def search_recon(kontext, age=None, bahncard=None):
 def main():
     import argparse
     parser = argparse.ArgumentParser()
-    parser.add_argument("--from-eva", required=True)
-    parser.add_argument("--to-eva", required=True)
+    parser.add_argument("--from-eva", default=None)
+    parser.add_argument("--to-eva", default=None)
+    parser.add_argument("--from", dest="from_name", default=None)
+    parser.add_argument("--to", dest="to_name", default=None)
     parser.add_argument("--date", required=True)
     parser.add_argument("--time", default="10:00:00")
     parser.add_argument("--age", default=None, type=int)
     parser.add_argument("--bahncard", default=None)
     args = parser.parse_args()
 
-    result = search_fares(args.from_eva, args.to_eva, args.date, args.time, args.age, args.bahncard)
+    from_station = args.from_name or args.from_eva
+    to_station = args.to_name or args.to_eva
+    if not from_station or not to_station:
+        print(json.dumps({"error": "need --from/--to or --from-eva/--to-eva"}))
+        sys.exit(1)
+
+    result = search_fares(from_station, to_station, args.date, args.time, args.age, args.bahncard)
     print(json.dumps(result, ensure_ascii=False))
 
 

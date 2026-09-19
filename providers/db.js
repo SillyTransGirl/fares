@@ -36,9 +36,28 @@ const EVA_MAP = new Map([
   ['hannover hbf', '8000152'], ['bremen hbf', '8000050'], ['freiburg hbf', '8000107'],
   ['dortmund hbf', '8000080'], ['mannheim hbf', '8000244'], ['karlsruhe hbf', '8000191'],
   ['würzburg hbf', '8000260'], ['augsburg hbf', '8000013'],
-  ['erfurt hbf', '8010099'], ['halle hbf', '8010147'], ['kiel hbf', '8000172'],
-  ['zürich hb', '8503000'], ['zurich hb', '8503000'], ['salzburg hbf', '8100002'], ['innsbruck hbf', '8100124'],
-  ['klagenfurt hbf', '8100153'], ['graz hbf', '8100118'], ['lintz hbf', '8100013'], ['bratislava hl.st.', '5600001'],
+  ['erfurt hbf', '8010099'], ['halle hbf', '8010147'], ['kiel hbf', '8000199'],
+  ['aschaffenburg hbf', '8000010'], ['aschaffenburg', '8000010'],
+  ['aachen hbf', '8000001'], ['bielefeld hbf', '8000036'], ['bochum hbf', '8000041'],
+  ['bonn hbf', '8000044'], ['braunschweig hbf', '8000049'],
+  ['duisburg hbf', '8000086'], ['oberhausen hbf', '8000286'],
+  ['flensburg hbf', '8000140'], ['rostock hbf', '8000451'], ['schwerin hbf', '8000480'],
+  ['magdeburg hbf', '8000327'], ['ulm hbf', '8000523'], ['heidelberg hbf', '8000156'],
+  ['darmstadt hbf', '8000240'], ['konstanz hbf', '8000335'], ['lindau hbf', '8000317'],
+  ['bielefeld hbf', '8000036'], ['giessen hbf', '8000145'], ['kaiserslautern hbf', '8000219'],
+  ['saarbrücken hbf', '8000456'], ['koblenz hbf', '8000233'], ['mainz hbf', '8000329'],
+  ['wiesbaden hbf', '8000545'], ['lübeck hbf', '8000323'], ['rheine hbf', '8000317'],
+  ['münster hbf', '8000379'], ['osnabrück hbf', '8000414'], ['oldenburg hbf', '8000408'],
+  ['paderborn hbf', '8000415'], ['potsdam hbf', '8000425'], ['regensburg hbf', '8000440'],
+  ['chemnitz hbf', '8000165'], ['cottbus hbf', '8000180'], ['bayreuth hbf', '8000028'],
+  ['hof hbf', '8000173'], ['passau hbf', '8000422'], ['landshut hbf', '8000248'],
+  ['ingolstadt hbf', '8000196'], ['fürth hbf', '8000130'], ['pforzheim hbf', '8000424'],
+  ['heilbronn hbf', '8000160'], ['tübingen hbf', '8000518'], ['worms hbf', '8000554'],
+  ['wuppertal hbf', '8000556'], ['solingen hbf', '8000488'],
+  ['zürich hb', '8503000'], ['zurich hb', '8503000'], ['basel sbb', '8500010'],
+  ['salzburg hbf', '8100002'], ['innsbruck hbf', '8100124'],
+  ['klagenfurt hbf', '8100153'], ['graz hbf', '8100118'], ['linz hbf', '8100013'],
+  ['bratislava hl.st.', '5600001'],
   ['budapest keleti', '5500003'], ['warschau', '5100048'], ['warszawa', '5100048'],
 ]);
 
@@ -114,13 +133,14 @@ function toIsoFromYYMMDDHHMM(yyMMdd, hhmm){
 // --- Vendo Backend (DB Navigator mobile API) via Python/curl_cffi bridge ---
 // app.services-bahn.de/mob is NOT behind Akamai - works directly from any VPS.
 // Python script uses curl_cffi with Chrome TLS impersonation.
-async function tryVendoFares(fromExtId, toExtId, whenDate, age, bahncard) {
+// Accepts either EVA codes OR station names (Vendo resolves names automatically).
+async function tryVendoFares(fromStation, toStation, whenDate, age, bahncard) {
   const pad = n => String(n).padStart(2, '0');
   const date = `${whenDate.getFullYear()}-${pad(whenDate.getMonth()+1)}-${pad(whenDate.getDate())}`;
   const time = `${pad(whenDate.getHours())}:${pad(whenDate.getMinutes())}:00`;
   const pyScript = '/opt/fares/scrapy_fares/vendo_fares.py';
 
-  const args = [pyScript, '--from-eva', fromExtId, '--to-eva', toExtId, '--date', date, '--time', time];
+  const args = [pyScript, '--from', fromStation, '--to', toStation, '--date', date, '--time', time];
   if (age != null) args.push('--age', String(age));
   if (bahncard) args.push('--bahncard', bahncard);
   const venvPy = '/opt/fares/scrapy_fares/.venv/bin/python3';
@@ -207,15 +227,11 @@ async function tryTimetables(fromId, whenDate) {
 }
 
 export async function search({ from, to, when, sparpreis, age, bahncard }) {
-  const fromId = await resolve(from); const toId = await resolve(to);
-  if (!fromId || !toId) {
-    // Station not resolvable for DB (no EVA). SBB resolves it and covers the route → not an error.
-    return { status: 'empty', error: `db: no EVA mapping for ${from}(${fromId||'?'})/${to}(${toId||'?'}) - SBB übernimmt die Strecke` };
-  }
   const whenDate = new Date(when);
 
-  // 0) Vendo Backend (DB Navigator mobile API) — direct, no proxy needed
-  const vf = await tryVendoFares(fromId, toId, whenDate, age, bahncard);
+  // 0) Vendo Backend (DB Navigator mobile API) — accepts station names directly
+  // No EVA resolution needed for Vendo (it resolves names automatically)
+  const vf = await tryVendoFares(from, to, whenDate, age, bahncard);
   if (vf.offers && vf.offers.length > 0) {
     const offers = parseVendoOffers(vf.offers);
     if (offers.length > 0) {
@@ -223,6 +239,12 @@ export async function search({ from, to, when, sparpreis, age, bahncard }) {
     }
   }
   if (vf.error) console.log(`[db] vendo: ${vf.error} → fallback`);
+
+  // Fallback: RIS::Journeys / Timetables need EVA codes
+  const fromId = await resolve(from); const toId = await resolve(to);
+  if (!fromId || !toId) {
+    return { status: 'empty', error: `db: no EVA mapping for ${from}(${fromId||'?'})/${to}(${toId||'?'}) - SBB übernimmt die Strecke` };
+  }
 
   // 1) Try RIS::Journeys (ideal for comparator, supports +14d)
   const ris = await tryRisJourneys(fromId, toId, whenDate);

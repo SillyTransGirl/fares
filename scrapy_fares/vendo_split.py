@@ -35,11 +35,20 @@ EVA_LOC = {
     "8000128": "A=1@O=Goettingen@X=9926069@Y=51536812@U=80@L=8000128@",
     "8003200": "A=1@O=Kassel-Wilhelmshoehe@X=9655194@Y=51311134@U=80@L=8003200@",
     "8000064": "A=1@O=Celle@X=10116352@Y=52624070@U=80@L=8000064@",
+    "8000010": "A=1@O=Aschaffenburg Hbf@X=9140213@Y=49979508@U=80@L=8000010@",
     "8103000": "A=1@O=Wien Hbf@X=163708860@Y=48184790@U=80@L=8103000@",
     "5400001": "A=1@O=Praha hl.n.@X=14423027@Y=50085783@U=80@L=5400001@",
     "8503000": "A=1@O=Zuerich HB@X=8565247@Y=47378543@U=80@L=8503000@",
 }
 
+
+def resolve_loc(station):
+    """Resolve station to Vendo location ID. Accepts EVA code or name."""
+    if station in EVA_LOC:
+        return EVA_LOC[station]
+    if station.isdigit():
+        return f"A=1@L={station}@"
+    return f"A=1@O={station}@"
 
 def make_headers():
     return {
@@ -118,9 +127,9 @@ def get_intermediate_stops(connections):
     return all_stops
 
 
-def find_split_tickets(from_eva, to_eva, date_str, time_str="10:00:00", max_splits=5):
-    from_loc = EVA_LOC.get(from_eva, f"A=1@L={from_eva}@")
-    to_loc = EVA_LOC.get(to_eva, f"A=1@L={to_eva}@")
+def find_split_tickets(from_station, to_station, date_str, time_str="10:00:00", max_splits=5):
+    from_loc = resolve_loc(from_station)
+    to_loc = resolve_loc(to_station)
     reiseDatum = datetime.strptime(f"{date_str}T{time_str}", "%Y-%m-%dT%H:%M:%S").replace(tzinfo=timezone.utc).isoformat()
 
     # Step 1: Get direct connections to find intermediate stops
@@ -131,7 +140,7 @@ def find_split_tickets(from_eva, to_eva, date_str, time_str="10:00:00", max_spli
     # Step 2: Extract intermediate stops
     intermediates = get_intermediate_stops(direct)
     # Filter: only stops that are NOT origin or destination
-    candidates = [s for s in intermediates if s["eva"] not in (from_eva, to_eva)]
+    candidates = [s for s in intermediates if s["name"] != from_station and s["name"] != to_station]
     # Limit to max_splits most common stops
     candidates = candidates[:max_splits]
 
@@ -142,9 +151,9 @@ def find_split_tickets(from_eva, to_eva, date_str, time_str="10:00:00", max_spli
     splits = []
     for stop in candidates:
         time.sleep(0.5)  # Rate limit
-        seg1 = vendo_search(from_loc, EVA_LOC.get(stop["eva"], f"A=1@L={stop['eva']}@"), reiseDatum)
+        seg1 = vendo_search(from_loc, resolve_loc(stop["name"]), reiseDatum)
         time.sleep(0.5)
-        seg2 = vendo_search(EVA_LOC.get(stop["eva"], f"A=1@L={stop['eva']}@"), to_loc, reiseDatum)
+        seg2 = vendo_search(resolve_loc(stop["name"]), to_loc, reiseDatum)
 
         p1 = seg1[0]["price"] if seg1 else None
         p2 = seg2[0]["price"] if seg2 else None
@@ -181,14 +190,22 @@ def find_split_tickets(from_eva, to_eva, date_str, time_str="10:00:00", max_spli
 def main():
     import argparse
     parser = argparse.ArgumentParser()
-    parser.add_argument("--from-eva", required=True)
-    parser.add_argument("--to-eva", required=True)
+    parser.add_argument("--from-eva", default=None)
+    parser.add_argument("--to-eva", default=None)
+    parser.add_argument("--from", dest="from_name", default=None)
+    parser.add_argument("--to", dest="to_name", default=None)
     parser.add_argument("--date", required=True)
     parser.add_argument("--time", default="10:00:00")
     parser.add_argument("--max-splits", default=5, type=int)
     args = parser.parse_args()
 
-    result = find_split_tickets(args.from_eva, args.to_eva, args.date, args.time, args.max_splits)
+    from_station = args.from_name or args.from_eva
+    to_station = args.to_name or args.to_eva
+    if not from_station or not to_station:
+        print(json.dumps({"error": "need --from/--to or --from-eva/--to-eva"}))
+        sys.exit(1)
+
+    result = find_split_tickets(from_station, to_station, args.date, args.time, args.max_splits)
     print(json.dumps(result, ensure_ascii=False))
 
 
