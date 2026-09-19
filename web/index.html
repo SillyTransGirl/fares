@@ -97,11 +97,11 @@ const money=(o)=>{
   return o.url ? `<a class="price" href="${o.url}" target="_blank" rel="noopener noreferrer">${inner}</a>` : inner;
 };
 const LOGO={
-db:'<svg viewBox="0 0 32 16" width="28" height="14"><rect width="32" height="16" rx="2" fill="#c1002a"/><text x="16" y="12.5" text-anchor="middle" font-size="11" font-weight="900" font-family="Arial,sans-serif" fill="#fff">DB</text></svg>',
-flix:'<svg viewBox="0 0 32 16" width="28" height="14"><rect width="32" height="16" rx="2" fill="#73d700"/><text x="16" y="12" text-anchor="middle" font-size="9" font-weight="900" font-family="Arial,sans-serif" fill="#1a1a1a">Flix</text></svg>',
-sbb:'<svg viewBox="0 0 32 16" width="28" height="14"><rect width="32" height="16" rx="2" fill="#c1002a"/><text x="16" y="12" text-anchor="middle" font-size="9" font-weight="900" font-family="Arial,sans-serif" fill="#fff">SBB</text></svg>',
-leo:'<svg viewBox="0 0 32 16" width="28" height="14"><rect width="32" height="16" rx="2" fill="#00a651"/><text x="16" y="12" text-anchor="middle" font-size="9" font-weight="900" font-family="Arial,sans-serif" fill="#fff">LEO</text></svg>',
-cd:'<svg viewBox="0 0 32 16" width="28" height="14"><rect width="32" height="16" rx="2" fill="#004494"/><text x="16" y="12" text-anchor="middle" font-size="9" font-weight="900" font-family="Arial,sans-serif" fill="#fff">CD</text></svg>',
+db:'<img src="https://assets.static-bahn.de/dam/jcr:47b6ca20-95d9-4102-bc5a-6ebb5634f009/db-logo.svg" alt="DB" height="14" style="vertical-align:middle">',
+flix:'<img src="https://upload.wikimedia.org/wikipedia/commons/thumb/e/e6/FlixTrain_Logo.svg/200px-FlixTrain_Logo.svg.png" alt="Flix" height="14" style="vertical-align:middle">',
+sbb:'<img src="https://upload.wikimedia.org/wikipedia/commons/thumb/6/6f/SBB_CFF_FFS_logo.svg/200px-SBB_CFF_FFS_logo.svg.png" alt="SBB" height="14" style="vertical-align:middle">',
+leo:'<img src="https://upload.wikimedia.org/wikipedia/commons/thumb/d/d5/Leo_Express.svg/200px-Leo_Express.svg.png" alt="Leo Express" height="14" style="vertical-align:middle">',
+cd:'<img src="https://upload.wikimedia.org/wikipedia/commons/thumb/8/80/Ceske_drahy-logo.svg/200px-Ceske_drahy-logo.svg.png" alt="CD" height="14" style="vertical-align:middle">',
 idos:'<svg viewBox="0 0 32 16" width="28" height="14"><rect width="32" height="16" rx="2" fill="#e8451a"/><text x="16" y="12" text-anchor="middle" font-size="8" font-weight="900" font-family="Arial,sans-serif" fill="#fff">IDOS</text></svg>'
 };
 const logoFor=(p)=>LOGO[p]||`<span style="color:#8b0000;font-weight:700;font-size:.85rem">${p||'?'}</span>`;
