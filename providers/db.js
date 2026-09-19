@@ -170,7 +170,7 @@ function parseVendoOffers(vendoOffers, fromStation, toStation, whenDate) {
     const toEva = EVA_MAP.get(toStation.toLowerCase()) || '';
     const soid = fromEva ? `A%3D1%40O%3D${encodeURIComponent(fromStation)}%40L%3D${fromEva}%40` : `O%3D${encodeURIComponent(fromStation)}`;
     const zoid = toEva ? `A%3D1%40O%3D${encodeURIComponent(toStation)}%40L%3D${toEva}%40` : `O%3D${encodeURIComponent(toStation)}`;
-    const bahnHash = `sts=true&so=${encodeURIComponent(fromStation)}&zo=${encodeURIComponent(toStation)}&soid=${soid}&zoid=${zoid}&kl=2&hd=${hd}&hza=D&ar=false&s=false&d=false&hz=%5B%5D&fm=false&bp=false`;
+    const bahnHash = `sts=true&so=${encodeURIComponent(fromStation)}&zo=${encodeURIComponent(toStation)}&soid=${soid}&zoid=${zoid}&kl=2&hd=${hd}&hza=D&ar=false&s=true&d=false&hz=%5B%5D&fm=false&bp=true`;
     const url = `https://www.bahn.de/buchung/fahrplan/suche#${bahnHash}`;
     offers.push(offer({
       provider: 'db', providerLabel: 'DB',
