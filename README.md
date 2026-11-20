@@ -5,7 +5,6 @@ a given route and date, normalizes the results into one unified offer schema,
 and serves them on a tiny JSON API with a single-page comparison view.
 
 **Repo:** https://github.com/SillyTransGirl/fares
-**Live:** https://fare.sillytransfem.online
 
 ---
 
